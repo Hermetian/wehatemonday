@@ -4,6 +4,7 @@ import TicketList from '../components/TicketList';
 import Terminal from '../components/Terminal';
 import { useRouter } from 'next/router';
 import { UserRole } from '@prisma/client';
+import { UserSettings } from '../components/UserSettings';
 
 const RedirectIfNotAuthenticated = () => {
   const { user } = useAuth();
@@ -24,6 +25,10 @@ const Homepage = () => {
 
   return (
     <div className="container mx-auto p-4">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <UserSettings />
+      </div>
       <RedirectIfNotAuthenticated />
       {role === UserRole.ADMIN && <Terminal />}
       {(role === UserRole.ADMIN || role === UserRole.AGENT) && <TicketList />}

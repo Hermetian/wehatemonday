@@ -3,6 +3,7 @@ import { router, protectedProcedure } from '../trpc';
 //import { prisma } from '../prisma';
 import { TRPCError } from '@trpc/server';
 import { TicketStatus, TicketPriority } from '../../types';
+import { UserRole } from '@prisma/client';
 
 export const ticketRouter = router({
   create: protectedProcedure 
@@ -57,22 +58,56 @@ export const ticketRouter = router({
         const limit = input.limit ?? 50;
         const cursor = input.cursor;
 
-        // If filterByUser is provided, verify the user has access
-        if (input.filterByUser && input.filterByUser !== ctx.user.id) {
+        // Get the user's role from the database
+        const user = await ctx.prisma.user.findUnique({
+          where: { id: ctx.user.id },
+          select: { role: true }
+        });
+
+        if (!user) {
           throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'You can only view your own tickets',
+            code: 'NOT_FOUND',
+            message: 'User not found',
           });
         }
+
+        // Define the where clause based on user role
+        const where = {
+          ...(user.role === UserRole.CUSTOMER
+            ? { customerId: ctx.user.id }
+            : user.role === UserRole.AGENT
+            ? {} // Agents can see all tickets
+            : user.role === UserRole.MANAGER
+            ? {} // Managers can see all tickets
+            : user.role === UserRole.ADMIN
+            ? {} // Admins can see all tickets
+            : { customerId: ctx.user.id }), // Default to only seeing own tickets
+          // Add filterByUser if provided and user has permission
+          ...(input.filterByUser && (user.role !== UserRole.CUSTOMER)
+            ? { customerId: input.filterByUser }
+            : {}),
+        };
 
         const tickets = await ctx.prisma.ticket.findMany({
           take: limit + 1,
           cursor: cursor ? { id: cursor } : undefined,
-          where: {
-            customerId: input.filterByUser ?? ctx.user.id,
-          },
+          where,
           orderBy: {
             createdAt: 'desc',
+          },
+          include: {
+            createdBy: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+            assignedTo: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
           },
         });
 

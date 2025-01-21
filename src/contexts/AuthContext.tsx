@@ -10,6 +10,7 @@ type AuthContextType = {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, role: UserRole) => Promise<void>;
   signOut: () => Promise<void>;
+  refreshSession: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,17 +20,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchUserRole = async (userId: string) => {
+    const { data: userData, error: userError } = await supabaseAdmin
+      .from('User')
+      .select('role')
+      .eq('id', userId)
+      .single();
+    
+    if (!userError && userData) {
+      setRole(userData.role);
+    } else {
+      console.error('Error fetching user role:', userError);
+      setRole(null);
+    }
+  };
+
+  const refreshSession = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      setUser(session.user);
+      await fetchUserRole(session.user.id);
+    }
+  };
+
   useEffect(() => {
     // Check active sessions and sets the user
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchUserRole(session.user.id);
+      }
       setLoading(false);
     });
 
     // Listen for changes on auth state
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event: string, session: Session | null) => {
+      async (_event: string, session: Session | null) => {
         setUser(session?.user ?? null);
+        if (session?.user) {
+          await fetchUserRole(session.user.id);
+        } else {
+          setRole(null);
+        }
         setLoading(false);
       }
     );
@@ -41,94 +73,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     if (data.user) {
-      // Fetch user role from the user table
-      const { data: userData, error: userError } = await supabase
-        .from('User')
-        .select('role')
-        .eq('id', data.user.id)
-        .single();
-      if (userError) throw userError;
-      setRole(userData.role);
+      await fetchUserRole(data.user.id);
     }
   };
 
   const signUp = async (email: string, password: string, role: UserRole): Promise<void> => {
-    try {
-      // First try to sign in if user exists
-      const { data: existingAuth, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    
+    // If error indicates user already exists, try to sign in
+    if (error?.message?.includes('User already registered')) {
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ 
+        email, 
+        password 
       });
-
-      let authUser;
-
-      if (signInError?.message?.includes('Invalid login credentials')) {
-        // User doesn't exist, create new auth user
-        const { data: newAuth, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              role: role,
-            },
-          },
-        });
-        
-        if (signUpError) throw signUpError;
-        authUser = newAuth.user;
-      } else if (signInError) {
-        // Some other error occurred
-        throw signInError;
-      } else {
-        // User exists and signed in successfully
-        authUser = existingAuth.user;
-      }
-      
-      if (authUser) {
-        console.log('User authenticated:', authUser.id, 'with role:', role);
-        
-        // Upsert user record in the User table using admin client
+      if (signInError) throw signInError;
+      if (signInData.user) {
+        // Upsert user in the database with the specified role
         const { error: upsertError } = await supabaseAdmin
           .from('User')
           .upsert(
-            {
-              id: authUser.id,
-              email: email,
-              role: role,
+            { 
+              id: signInData.user.id, 
+              email, 
+              role,
               updatedAt: 'now()'
             },
             { 
               onConflict: 'id',
+              ignoreDuplicates: false 
             }
           );
-          
-        if (upsertError) {
-          console.error('Error upserting user record:', upsertError);
-          await supabase.auth.signOut();
-          throw upsertError;
-        }
-        
+        if (upsertError) throw upsertError;
         setRole(role);
+        return;
       }
-    } catch (error) {
-      console.error('Signup/signin error:', error);
-      throw error;
+    }
+    
+    // Handle normal sign up flow
+    if (error) throw error;
+    if (data.user) {
+      // Upsert user in the database with the specified role
+      const { error: upsertError } = await supabaseAdmin
+        .from('User')
+        .upsert(
+          { 
+            id: data.user.id, 
+            email, 
+            role,
+            updatedAt: 'now()'
+          },
+          { 
+            onConflict: 'id',
+            ignoreDuplicates: false 
+          }
+        );
+      if (upsertError) throw upsertError;
+      setRole(role);
     }
   };
 
   const signOut = async (): Promise<void> => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+    setUser(null);
+    setRole(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, role, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, role, loading, signIn, signUp, signOut, refreshSession }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-export function useAuth(): AuthContextType {
+export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
