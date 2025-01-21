@@ -19,100 +19,144 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
 
   const fetchUserRole = async (userId: string) => {
-    const { data: userData, error: userError } = await supabaseAdmin
-      .from('User')
-      .select('role')
-      .eq('id', userId)
-      .single();
-    
-    if (!userError && userData) {
-      setRole(userData.role);
-    } else {
-      console.error('Error fetching user role:', userError);
+    try {
+      const { data: userData, error: userError } = await supabaseAdmin
+        .from('User')
+        .select('role')
+        .eq('id', userId)
+        .single();
+      
+      if (!userError && userData) {
+        setRole(userData.role);
+      } else {
+        console.error('Error fetching user role:', userError);
+        setRole(null);
+      }
+    } catch (error) {
+      console.error('Error in fetchUserRole:', error);
       setRole(null);
     }
   };
 
   const refreshSession = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      setUser(session.user);
-      await fetchUserRole(session.user.id);
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      
+      if (session?.user) {
+        setUser(session.user);
+        await fetchUserRole(session.user.id);
+      } else {
+        setUser(null);
+        setRole(null);
+      }
+    } catch (error) {
+      console.error('Error refreshing session:', error);
+      setUser(null);
+      setRole(null);
     }
   };
 
+  // Initial session check
   useEffect(() => {
-    // Check active sessions and sets the user
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUserRole(session.user.id);
-      }
-      setLoading(false);
-    });
+    const initializeAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
 
-    // Listen for changes on auth state
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event: string, session: Session | null) => {
-        setUser(session?.user ?? null);
         if (session?.user) {
+          setUser(session.user);
+          await fetchUserRole(session.user.id);
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error);
+      } finally {
+        setLoading(false);
+        setInitialized(true);
+      }
+    };
+
+    initializeAuth();
+  }, []);
+
+  // Auth state change listener
+  useEffect(() => {
+    if (!initialized) return;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (session?.user) {
+          setUser(session.user);
           await fetchUserRole(session.user.id);
         } else {
+          setUser(null);
           setRole(null);
         }
         setLoading(false);
       }
     );
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [initialized]);
 
   const signIn = async (email: string, password: string): Promise<void> => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    if (data.user) {
-      await fetchUserRole(data.user.id);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ 
+        email, 
+        password 
+      });
+      
+      if (error) throw error;
+      
+      if (data.user) {
+        setUser(data.user);
+        await fetchUserRole(data.user.id);
+      }
+    } catch (error) {
+      console.error('Error signing in:', error);
+      throw error;
     }
   };
 
   const signUp = async (email: string, password: string, role: UserRole): Promise<void> => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    
-    // If error indicates user already exists, try to sign in
-    if (error?.message?.includes('User already registered')) {
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ 
-        email, 
-        password 
-      });
-      if (signInError) throw signInError;
-      if (signInData.user) {
-        // Upsert user in the database with the specified role
-        const { error: upsertError } = await supabaseAdmin
-          .from('User')
-          .upsert(
-            { 
-              id: signInData.user.id, 
-              email, 
-              role,
-              updatedAt: 'now()'
-            },
-            { 
-              onConflict: 'id',
-              ignoreDuplicates: false 
-            }
-          );
-        if (upsertError) throw upsertError;
-        setRole(role);
-        return;
-      }
+    // First check if user exists
+    const { data: existingUser } = await supabase.auth.signInWithPassword({ 
+      email, 
+      password 
+    });
+
+    if (existingUser?.user) {
+      // User exists, update their role
+      const { error: upsertError } = await supabaseAdmin
+        .from('User')
+        .upsert(
+          { 
+            id: existingUser.user.id, 
+            email, 
+            role,
+            updatedAt: new Date().toISOString()
+          },
+          { 
+            onConflict: 'id',
+            ignoreDuplicates: false 
+          }
+        );
+      if (upsertError) throw upsertError;
+      setRole(role);
+      return;
     }
-    
-    // Handle normal sign up flow
+
+    // User doesn't exist, proceed with sign up
+    const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
+    
     if (data.user) {
-      // Upsert user in the database with the specified role
+      // Create new user in the database with the specified role
       const { error: upsertError } = await supabaseAdmin
         .from('User')
         .upsert(

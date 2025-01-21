@@ -15,7 +15,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 // Client for public operations
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined
+  }
+})
 
 // Client with elevated privileges for admin operations
 export const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY 

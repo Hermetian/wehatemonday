@@ -3,16 +3,17 @@ import { trpc } from '../utils/trpc';
 import { TicketStatus, TicketPriority } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '@prisma/client';
+import { TicketDialog } from './TicketDialog';
 
 // Define the full ticket type as it comes from the server
-interface ServerTicket {
+export interface ServerTicket {
   id: string;
   createdAt: string;
   updatedAt: string;
   title: string;
   description: string;
-  status: string;
-  priority: string;
+  status: TicketStatus;
+  priority: TicketPriority;
   customerId: string;
   assignedToId: string | null;
   createdById: string;
@@ -53,6 +54,9 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     }
   );
 
+  // State for the dialog
+  const [selectedTicket, setSelectedTicket] = React.useState<ServerTicket | null>(null);
+
   // Transform the data to handle string enums
   const tickets = React.useMemo(() => {
     if (!data?.pages) return [];
@@ -87,7 +91,8 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
         {tickets.map((ticket) => (
           <div
             key={ticket.id}
-            className="p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow"
+            className="p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => setSelectedTicket(ticket)}
           >
             <div className="flex justify-between items-start">
               <div className="space-y-2">
@@ -178,6 +183,15 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
             Load More
           </button>
         </div>
+      )}
+
+      {selectedTicket && (
+        <TicketDialog
+          ticket={selectedTicket}
+          open={!!selectedTicket}
+          onOpenChange={(open) => !open && setSelectedTicket(null)}
+          onTicketUpdated={() => setSelectedTicket(null)}
+        />
       )}
     </div>
   );
