@@ -16,8 +16,8 @@ const Terminal = () => {
       });
       const data = await result.json();
       setResponse(JSON.stringify(data, null, 2));
-    } catch (error) {
-      setResponse('Error executing query');
+    } catch (error: unknown) {
+      setResponse(error instanceof Error ? error.message : 'Error executing query');
     }
   };
 

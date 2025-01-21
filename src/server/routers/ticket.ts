@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { router, publicProcedure, protectedProcedure } from '../trpc';
+import { router, protectedProcedure } from '../trpc';
 //import { prisma } from '../prisma';
 import { TRPCError } from '@trpc/server';
 import { TicketStatus, TicketPriority } from '../../types';
