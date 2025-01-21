@@ -15,9 +15,17 @@ export const trpc = createTRPCNext<AppRouter>({
       links: [
         httpBatchLink({
           url: `${getBaseUrl()}/api/trpc`,
-          headers: async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) return {};
+          async headers() {
+            const { data: { session }, error } = await supabase.auth.getSession();
+            
+            if (error) {
+              console.error('Error getting session:', error);
+              return {};
+            }
+            
+            if (!session?.access_token) {
+              return {};
+            }
             
             return {
               'Authorization': `Bearer ${session.access_token}`,
@@ -25,7 +33,15 @@ export const trpc = createTRPCNext<AppRouter>({
           },
         }),
       ],
+      queryClientConfig: {
+        defaultOptions: {
+          queries: {
+            retry: false,
+            refetchOnWindowFocus: false,
+          },
+        },
+      },
     };
   },
-  ssr: false,
+  ssr: true,
 }); 
