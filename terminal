@@ -1,0 +1,5 @@
+npx create-next-app@latest crm-webapp --typescript --tailwind --eslint
+cd crm-webapp
+npm install @supabase/supabase-js @prisma/client @trpc/server @trpc/client @trpc/react-query @tanstack/react-query zod
+npm install -D prisma @types/node @types/react @types/react-dom
+npm install -D @types/supabase__supabase-js @trpc/next 

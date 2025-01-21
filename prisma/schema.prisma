@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  role          UserRole  @default(CUSTOMER)
+  assignedTeams Team[]    @relation("TeamMembers")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now())
+  assignedTickets Ticket[] @relation("AssignedTo")
+  createdTickets Ticket[] @relation("CreatedBy")
+}
+
+model Team {
+  id          String    @id @default(cuid())
+  name        String
+  members     User[]    @relation("TeamMembers")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now())
+}
+
+model Ticket {
+  id          String    @id @default(cuid())
+  title       String
+  description String
+  status      String    @default("OPEN")
+  priority    String    @default("MEDIUM")
+  customerId  String
+  assignedTo  User?     @relation("AssignedTo", fields: [assignedToId], references: [id])
+  assignedToId String?
+  createdBy   User      @relation("CreatedBy", fields: [createdById], references: [id])
+  createdById String
+  tags        String[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now())
+  messages    Message[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  content   String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id])
+  ticketId  String
+  isInternal Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  AGENT
+  CUSTOMER
+} 
