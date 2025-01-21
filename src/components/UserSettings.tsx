@@ -146,7 +146,7 @@ export function UserSettings() {
       setTimeout(() => {
         router.push('/auth/signin');
       }, 100);
-    } catch (error: any) {
+    } catch (_error) {
       toast.error('Failed to sign out');
     }
   };
