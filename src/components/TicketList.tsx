@@ -4,7 +4,15 @@ import { TicketStatus, TicketPriority } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '@prisma/client';
 import { TicketDialog } from './TicketDialog';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, SortAsc, Filter } from 'lucide-react';
+import { Button } from './ui/button';
+import { Checkbox } from './ui/checkbox';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 // Define the full ticket type as it comes from the server
 export interface ServerTicket {
@@ -39,12 +47,17 @@ interface TicketPage {
   nextCursor?: string;
 }
 
+type SortOption = 'assignedToMe' | 'priority' | 'updatedAt';
+
 interface TicketListProps {
   filterByUser?: string;
 }
 
 export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
+  const [showCompleted, setShowCompleted] = React.useState(false);
+  const [sortBy, setSortBy] = React.useState<SortOption[]>(['assignedToMe', 'priority', 'updatedAt']);
+
   const {
     data,
     isLoading,
@@ -53,6 +66,8 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
   } = trpc.ticket.list.useInfiniteQuery(
     {
       limit: 10,
+      showCompleted,
+      sortBy,
       ...(filterByUser ? { filterByUser } : {})
     },
     {
@@ -75,6 +90,19 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     );
   }, [data?.pages]);
 
+  const handleSortChange = (sortOption: SortOption) => {
+    setSortBy(prev => {
+      const newSort = [...prev];
+      // Move the selected option to the front
+      const index = newSort.indexOf(sortOption);
+      if (index > -1) {
+        newSort.splice(index, 1);
+      }
+      newSort.unshift(sortOption);
+      return newSort;
+    });
+  };
+
   if (isLoading) {
     return <div className="flex justify-center items-center p-8">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
@@ -91,6 +119,39 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
         <h2 className="text-2xl font-bold">
           {role === UserRole.CUSTOMER ? 'My Tickets' : 'All Tickets'}
         </h2>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/20">
+            <Checkbox
+              id="show-completed"
+              checked={showCompleted}
+              onCheckedChange={(checked: boolean) => setShowCompleted(checked)}
+              className="border-white/50 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+            />
+            <label htmlFor="show-completed" className="text-sm text-white font-medium select-none">
+              Show completed tickets
+            </label>
+          </div>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <SortAsc className="h-4 w-4" />
+                Sort
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleSortChange('assignedToMe')}>
+                Assigned to me first
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSortChange('priority')}>
+                By priority
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSortChange('updatedAt')}>
+                By last updated
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
       
       <div className="grid gap-4">

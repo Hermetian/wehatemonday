@@ -68,6 +68,8 @@ export const ticketRouter = router({
         limit: z.number().min(1).max(100).nullish(),
         cursor: z.string().nullish(),
         filterByUser: z.string().optional(),
+        showCompleted: z.boolean().optional().default(false),
+        sortBy: z.enum(['assignedToMe', 'priority', 'updatedAt']).array().optional().default(['assignedToMe', 'priority', 'updatedAt']),
       })
     )
     .query(async ({ input, ctx }): Promise<{ tickets: any[]; nextCursor?: string }> => {
@@ -88,7 +90,7 @@ export const ticketRouter = router({
           });
         }
 
-        // Define the where clause based on user role
+        // Define the where clause based on user role and filters
         const where = {
           ...(user.role === UserRole.CUSTOMER
             ? { customerId: ctx.user.id }
@@ -103,16 +105,28 @@ export const ticketRouter = router({
           ...(input.filterByUser && (user.role !== UserRole.CUSTOMER)
             ? { customerId: input.filterByUser }
             : {}),
+          // Hide completed tickets unless explicitly requested
+          ...(!input.showCompleted
+            ? {
+                NOT: {
+                  status: {
+                    in: [TicketStatus.CLOSED, TicketStatus.RESOLVED],
+                  },
+                },
+              }
+            : {}),
         };
 
-        // Get the latest audit log for each ticket to find the last updater
+        // Get tickets with sorting
         const ticketsWithAuditLogs = await ctx.prisma.ticket.findMany({
           take: limit + 1,
           cursor: cursor ? { id: cursor } : undefined,
           where,
-          orderBy: {
-            updatedAt: 'desc',
-          },
+          orderBy: [
+            // If assignedToMe is in sortBy, we'll handle this in memory since it requires context
+            { priority: 'desc' },
+            { updatedAt: 'desc' },
+          ],
           include: {
             createdBy: {
               select: {
@@ -174,11 +188,22 @@ export const ticketRouter = router({
           nextCursor = nextItem!.id;
         }
 
-        const tickets = ticketsWithAuditLogs.map(ticket => ({
+        let tickets = ticketsWithAuditLogs.map(ticket => ({
           ...ticket,
           lastUpdatedBy: lastUpdaterMap.get(ticket.id) || ticket.createdBy,
           messageCount: ticket.messages.length,
         }));
+
+        // Handle assignedToMe sorting in memory if it's in the sortBy array
+        if (input.sortBy?.includes('assignedToMe')) {
+          tickets = tickets.sort((a, b) => {
+            const aAssignedToMe = a.assignedToId === ctx.user.id;
+            const bAssignedToMe = b.assignedToId === ctx.user.id;
+            if (aAssignedToMe && !bAssignedToMe) return -1;
+            if (!aAssignedToMe && bAssignedToMe) return 1;
+            return 0;
+          });
+        }
 
         return {
           tickets,
