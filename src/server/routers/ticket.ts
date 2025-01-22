@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc';
 //import { prisma } from '../prisma';
 import { TRPCError } from '@trpc/server';
-import { TicketStatus, TicketPriority, SortConfig } from '../../types';
+import { TicketStatus, TicketPriority} from '../../types';
 import { UserRole } from '@prisma/client';
 import { createAuditLog } from '../../lib/audit-logger';
 
