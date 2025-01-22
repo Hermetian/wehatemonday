@@ -4,7 +4,7 @@ import { TicketStatus, TicketPriority } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '@prisma/client';
 import { TicketDialog } from './TicketDialog';
-import { MessageCircle, SortAsc, Filter } from 'lucide-react';
+import { MessageCircle, SortAsc, Filter, ArrowDown, ArrowUp, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import {
@@ -12,7 +12,27 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+  DropdownMenuCheckboxItem,
 } from './ui/dropdown-menu';
+import { Badge } from './ui/badge';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { SortableItem } from './SortableItem';
 
 // Define the full ticket type as it comes from the server
 export interface ServerTicket {
@@ -47,16 +67,40 @@ interface TicketPage {
   nextCursor?: string;
 }
 
-type SortOption = 'assignedToMe' | 'priority' | 'updatedAt';
+interface SortConfig {
+  field: 'assignedToMe' | 'priority' | 'updatedAt';
+  direction: 'asc' | 'desc';
+}
 
 interface TicketListProps {
   filterByUser?: string;
 }
 
+const SORT_LABELS: Record<SortConfig['field'], string> = {
+  assignedToMe: 'Assigned to me',
+  priority: 'Priority',
+  updatedAt: 'Last updated',
+};
+
 export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
   const { role, user } = useAuth();
   const [showCompleted, setShowCompleted] = React.useState(false);
-  const [sortBy, setSortBy] = React.useState<SortOption[]>(['assignedToMe', 'priority', 'updatedAt']);
+  const [sortConfig, setSortConfig] = React.useState<SortConfig[]>([
+    { field: 'assignedToMe', direction: 'desc' },
+    { field: 'priority', direction: 'desc' },
+    { field: 'updatedAt', direction: 'desc' },
+  ]);
+  const [selectedTags, setSelectedTags] = React.useState<string[]>([]);
+  const [includeUntagged, setIncludeUntagged] = React.useState(false);
+  const [isSortMenuOpen, setIsSortMenuOpen] = React.useState(false);
+
+  // Set up DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const {
     data,
@@ -67,7 +111,9 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     {
       limit: 10,
       showCompleted,
-      sortBy,
+      sortConfig,
+      tags: selectedTags,
+      includeUntagged,
       ...(filterByUser ? { filterByUser } : {})
     },
     {
@@ -90,17 +136,44 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     );
   }, [data?.pages]);
 
-  const handleSortChange = (sortOption: SortOption) => {
-    setSortBy(prev => {
-      const newSort = [...prev];
-      // Move the selected option to the front
-      const index = newSort.indexOf(sortOption);
-      if (index > -1) {
-        newSort.splice(index, 1);
-      }
-      newSort.unshift(sortOption);
-      return newSort;
+  // Get unique tags from all tickets
+  const availableTags = React.useMemo(() => {
+    const tagSet = new Set<string>();
+    tickets.forEach(ticket => {
+      ticket.tags.forEach((tag: string) => tagSet.add(tag));
     });
+    return Array.from(tagSet).sort();
+  }, [tickets]);
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    
+    if (over && active.id !== over.id) {
+      setSortConfig((items) => {
+        const oldIndex = items.findIndex((item) => item.field === active.id);
+        const newIndex = items.findIndex((item) => item.field === over.id);
+        
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
+
+  const toggleSortDirection = (field: SortConfig['field']) => {
+    setSortConfig(prev => 
+      prev.map(config => 
+        config.field === field
+          ? { ...config, direction: config.direction === 'asc' ? 'desc' : 'asc' }
+          : config
+      )
+    );
+  };
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags(prev => 
+      prev.includes(tag) 
+        ? prev.filter(t => t !== tag)
+        : [...prev, tag]
+    );
   };
 
   if (isLoading) {
@@ -115,11 +188,12 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
         <h2 className="text-2xl font-bold">
           {role === UserRole.CUSTOMER ? 'My Tickets' : 'All Tickets'}
         </h2>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Show completed tickets toggle */}
           <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/20">
             <Checkbox
               id="show-completed"
@@ -131,26 +205,94 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
               Show completed tickets
             </label>
           </div>
-          
-          <DropdownMenu>
+
+          {/* Sort dropdown */}
+          <DropdownMenu open={isSortMenuOpen} onOpenChange={setIsSortMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-2">
                 <SortAsc className="h-4 w-4" />
                 Sort
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => handleSortChange('assignedToMe')}>
-                Assigned to me first
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleSortChange('priority')}>
-                By priority
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleSortChange('updatedAt')}>
-                By last updated
-              </DropdownMenuItem>
+            <DropdownMenuContent align="end" className="w-72 p-2">
+              <DropdownMenuLabel className="px-2 pb-2">Sort Order</DropdownMenuLabel>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={sortConfig.map(config => config.field)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-1">
+                    {sortConfig.map((config, index) => (
+                      <SortableItem
+                        key={config.field}
+                        id={config.field}
+                        label={SORT_LABELS[config.field]}
+                        isActive={true}
+                        order={index + 1}
+                        direction={config.direction}
+                        onDirectionChange={() => toggleSortDirection(config.field)}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Filter by tags dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Filter className="h-4 w-4" />
+                Filter Tags
+                {(selectedTags.length > 0 || includeUntagged) && (
+                  <Badge variant="secondary" className="ml-1">
+                    {selectedTags.length + (includeUntagged ? 1 : 0)}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Filter by Tags</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {availableTags.map(tag => (
+                <DropdownMenuCheckboxItem
+                  key={tag}
+                  checked={selectedTags.includes(tag)}
+                  onCheckedChange={() => toggleTag(tag)}
+                >
+                  {tag}
+                </DropdownMenuCheckboxItem>
+              ))}
+              {availableTags.length > 0 && <DropdownMenuSeparator />}
+              <DropdownMenuCheckboxItem
+                checked={includeUntagged}
+                onCheckedChange={(checked) => setIncludeUntagged(checked)}
+              >
+                Include untagged tickets
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Clear filters button */}
+          {(selectedTags.length > 0 || includeUntagged) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSelectedTags([]);
+                setIncludeUntagged(false);
+              }}
+              className="gap-2"
+            >
+              <X className="h-4 w-4" />
+              Clear Filters
+            </Button>
+          )}
         </div>
       </div>
       

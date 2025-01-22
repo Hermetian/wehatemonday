@@ -9,6 +9,13 @@ import { createAuditLog } from '../../lib/audit-logger';
 const STAFF_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT] as const;
 const ASSIGNMENT_ROLES = [UserRole.ADMIN, UserRole.MANAGER] as const;
 
+type SortField = 'assignedToMe' | 'priority' | 'updatedAt';
+
+interface SortConfig {
+  field: SortField;
+  direction: 'asc' | 'desc';
+}
+
 export const ticketRouter = router({
   create: protectedProcedure 
     .input(
@@ -69,7 +76,16 @@ export const ticketRouter = router({
         cursor: z.string().nullish(),
         filterByUser: z.string().optional(),
         showCompleted: z.boolean().optional().default(false),
-        sortBy: z.enum(['assignedToMe', 'priority', 'updatedAt']).array().optional().default(['assignedToMe', 'priority', 'updatedAt']),
+        sortConfig: z.array(z.object({
+          field: z.enum(['assignedToMe', 'priority', 'updatedAt']),
+          direction: z.enum(['asc', 'desc'])
+        })).default([
+          { field: 'assignedToMe', direction: 'desc' },
+          { field: 'priority', direction: 'desc' },
+          { field: 'updatedAt', direction: 'desc' }
+        ]),
+        tags: z.array(z.string()).optional(),
+        includeUntagged: z.boolean().optional().default(false),
       })
     )
     .query(async ({ input, ctx }): Promise<{ tickets: any[]; nextCursor?: string }> => {
@@ -115,6 +131,15 @@ export const ticketRouter = router({
                 },
               }
             : {}),
+          // Handle tag filtering
+          ...(input.tags?.length || input.includeUntagged
+            ? {
+                OR: [
+                  ...(input.tags?.length ? [{ tags: { hasSome: input.tags } }] : []),
+                  ...(input.includeUntagged ? [{ tags: { isEmpty: true } }] : []),
+                ],
+              }
+            : {}),
         };
 
         // Get tickets with sorting
@@ -123,7 +148,7 @@ export const ticketRouter = router({
           cursor: cursor ? { id: cursor } : undefined,
           where,
           orderBy: [
-            // If assignedToMe is in sortBy, we'll handle this in memory since it requires context
+            // We'll handle assignedToMe in memory
             { priority: 'desc' },
             { updatedAt: 'desc' },
           ],
@@ -194,16 +219,39 @@ export const ticketRouter = router({
           messageCount: ticket.messages.length,
         }));
 
-        // Handle assignedToMe sorting in memory if it's in the sortBy array
-        if (input.sortBy?.includes('assignedToMe')) {
-          tickets = tickets.sort((a, b) => {
-            const aAssignedToMe = a.assignedToId === ctx.user.id;
-            const bAssignedToMe = b.assignedToId === ctx.user.id;
-            if (aAssignedToMe && !bAssignedToMe) return -1;
-            if (!aAssignedToMe && bAssignedToMe) return 1;
-            return 0;
-          });
-        }
+        // Apply sorting based on sortConfig
+        tickets = tickets.sort((a, b) => {
+          for (const { field, direction } of input.sortConfig) {
+            let comparison = 0;
+            
+            switch (field) {
+              case 'assignedToMe':
+                const aAssignedToMe = a.assignedToId === ctx.user.id;
+                const bAssignedToMe = b.assignedToId === ctx.user.id;
+                comparison = Number(bAssignedToMe) - Number(aAssignedToMe);
+                break;
+              
+              case 'priority':
+                const priorityOrder: Record<TicketPriority, number> = {
+                  [TicketPriority.URGENT]: 3,
+                  [TicketPriority.HIGH]: 2,
+                  [TicketPriority.MEDIUM]: 1,
+                  [TicketPriority.LOW]: 0,
+                };
+                comparison = priorityOrder[b.priority as TicketPriority] - priorityOrder[a.priority as TicketPriority];
+                break;
+              
+              case 'updatedAt':
+                comparison = new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+                break;
+            }
+
+            if (comparison !== 0) {
+              return direction === 'desc' ? comparison : -comparison;
+            }
+          }
+          return 0;
+        });
 
         return {
           tickets,
