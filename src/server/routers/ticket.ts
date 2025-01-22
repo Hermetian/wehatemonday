@@ -4,6 +4,7 @@ import { router, protectedProcedure } from '../trpc';
 import { TRPCError } from '@trpc/server';
 import { TicketStatus, TicketPriority } from '../../types';
 import { UserRole } from '@prisma/client';
+import { createAuditLog } from '../../lib/audit-logger';
 
 const STAFF_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT] as const;
 const ASSIGNMENT_ROLES = [UserRole.ADMIN, UserRole.MANAGER] as const;
@@ -29,7 +30,7 @@ export const ticketRouter = router({
           });
         }
 
-        return await ctx.prisma.ticket.create({
+        const ticket = await ctx.prisma.ticket.create({
           data: {
             ...input,
             status: TicketStatus.OPEN,
@@ -38,6 +39,19 @@ export const ticketRouter = router({
             },
           },
         });
+
+        // Create audit log
+        await createAuditLog({
+          action: 'CREATE',
+          entity: 'TICKET',
+          entityId: ticket.id,
+          userId: ctx.user.id,
+          oldData: null,
+          newData: ticket,
+          prisma: ctx.prisma,
+        });
+
+        return ticket;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -161,13 +175,13 @@ export const ticketRouter = router({
           });
         }
 
-        // Get the current ticket
-        const ticket = await ctx.prisma.ticket.findUnique({
+        // Get the current ticket for audit logging
+        const existingTicket = await ctx.prisma.ticket.findUnique({
           where: { id: input.id },
           include: { createdBy: true }
         });
 
-        if (!ticket) {
+        if (!existingTicket) {
           throw new TRPCError({
             code: 'NOT_FOUND',
             message: 'Ticket not found',
@@ -176,7 +190,7 @@ export const ticketRouter = router({
 
         // Check permissions
         const canEditAll = STAFF_ROLES.includes(user.role as typeof STAFF_ROLES[number]);
-        const isTicketOwner = ticket.createdById === ctx.user.id;
+        const isTicketOwner = existingTicket.createdById === ctx.user.id;
 
         // If user is not authorized to edit all fields and trying to edit restricted fields
         if (!canEditAll && (input.title || input.status || input.priority || input.assignedToId || input.tags)) {
@@ -202,7 +216,7 @@ export const ticketRouter = router({
           });
         }
 
-        return await ctx.prisma.ticket.update({
+        const updatedTicket = await ctx.prisma.ticket.update({
           where: { id: input.id },
           data: {
             ...(input.title && { title: input.title }),
@@ -229,6 +243,19 @@ export const ticketRouter = router({
             },
           },
         });
+
+        // Create audit log
+        await createAuditLog({
+          action: 'UPDATE',
+          entity: 'TICKET',
+          entityId: input.id,
+          userId: ctx.user.id,
+          oldData: existingTicket,
+          newData: updatedTicket,
+          prisma: ctx.prisma,
+        });
+
+        return updatedTicket;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

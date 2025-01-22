@@ -17,6 +17,7 @@ model User {
   updatedAt     DateTime  @default(now())
   assignedTickets Ticket[] @relation("AssignedTo")
   createdTickets Ticket[] @relation("CreatedBy")
+  auditLogs     AuditLog[]
 }
 
 model Team {
@@ -52,6 +53,21 @@ model Message {
   isInternal Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String   // 'CREATE', 'UPDATE', 'DELETE'
+  entity    String   // 'TICKET', 'USER'
+  entityId  String
+  userId    String
+  user   User @relation(fields: [userId], references: [id])
+  oldData   Json?
+  newData   Json
+  timestamp DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId])
 }
 
 enum UserRole {

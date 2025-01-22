@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { UserRole } from '@prisma/client';
+import { createAuditLog } from '../lib/audit-logger';
+import { prisma } from '../server/prisma';
 
 type AuthContextType = {
   user: User | null;
@@ -131,6 +133,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (existingUser?.user) {
+      // Get existing user data for audit log
+      const existingUserData = await prisma.user.findUnique({
+        where: { id: existingUser.user.id },
+      });
+
       // User exists, update their role
       const { error: upsertError } = await supabaseAdmin
         .from('User')
@@ -147,6 +154,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         );
       if (upsertError) throw upsertError;
+
+      // Create audit log for role update
+      if (existingUserData) {
+        await createAuditLog({
+          action: 'UPDATE',
+          entity: 'USER',
+          entityId: existingUser.user.id,
+          userId: existingUser.user.id,
+          oldData: existingUserData,
+          newData: { ...existingUserData, role },
+          prisma,
+        });
+      }
+
       setRole(role);
       return;
     }
@@ -172,6 +193,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         );
       if (upsertError) throw upsertError;
+
+      // Create audit log for new user
+      await createAuditLog({
+        action: 'CREATE',
+        entity: 'USER',
+        entityId: data.user.id,
+        userId: data.user.id,
+        oldData: null,
+        newData: {
+          id: data.user.id,
+          email,
+          role,
+          updatedAt: new Date(),
+        },
+        prisma,
+      });
+
       setRole(role);
     }
   };
