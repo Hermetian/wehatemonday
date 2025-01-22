@@ -4,13 +4,12 @@ import { TicketStatus, TicketPriority } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '@prisma/client';
 import { TicketDialog } from './TicketDialog';
-import { MessageCircle, SortAsc, Filter, ArrowDown, ArrowUp, X } from 'lucide-react';
+import { MessageCircle, SortAsc, Filter, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
   DropdownMenuLabel,
@@ -83,7 +82,7 @@ const SORT_LABELS: Record<SortConfig['field'], string> = {
 };
 
 export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
-  const { role, user } = useAuth();
+  const { role } = useAuth();
   const [showCompleted, setShowCompleted] = React.useState(false);
   const [sortConfig, setSortConfig] = React.useState<SortConfig[]>([
     { field: 'assignedToMe', direction: 'desc' },
