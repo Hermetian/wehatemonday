@@ -2,19 +2,14 @@ import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc';
 //import { prisma } from '../prisma';
 import { TRPCError } from '@trpc/server';
-import { TicketStatus, TicketPriority } from '../../types';
+import { TicketStatus, TicketPriority, SortConfig } from '../../types';
 import { UserRole } from '@prisma/client';
 import { createAuditLog } from '../../lib/audit-logger';
 
 const STAFF_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT] as const;
 const ASSIGNMENT_ROLES = [UserRole.ADMIN, UserRole.MANAGER] as const;
 
-type SortField = 'assignedToMe' | 'priority' | 'updatedAt';
-
-interface SortConfig {
-  field: SortField;
-  direction: 'asc' | 'desc';
-}
+type SortField = SortConfig['field'];
 
 export const ticketRouter = router({
   create: protectedProcedure 

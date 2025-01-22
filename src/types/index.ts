@@ -24,4 +24,9 @@ export enum TicketPriority {
   MEDIUM = 'MEDIUM',
   HIGH = 'HIGH',
   URGENT = 'URGENT'
+}
+
+export interface SortConfig {
+  field: 'assignedToMe' | 'priority' | 'updatedAt';
+  direction: 'asc' | 'desc';
 } 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { trpc } from '../utils/trpc';
-import { TicketStatus, TicketPriority } from '../types';
+import { TicketStatus, TicketPriority, SortConfig } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '@prisma/client';
 import { TicketDialog } from './TicketDialog';
@@ -64,11 +64,6 @@ export interface ServerTicket {
 interface TicketPage {
   tickets: ServerTicket[];
   nextCursor?: string;
-}
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export interface SortConfig {
-  field: 'assignedToMe' | 'priority' | 'updatedAt';
-  direction: 'asc' | 'desc';
 }
 
 interface TicketListProps {
