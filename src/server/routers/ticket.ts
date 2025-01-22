@@ -9,8 +9,6 @@ import { createAuditLog } from '../../lib/audit-logger';
 const STAFF_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT] as const;
 const ASSIGNMENT_ROLES = [UserRole.ADMIN, UserRole.MANAGER] as const;
 
-type SortField = SortConfig['field'];
-
 export const ticketRouter = router({
   create: protectedProcedure 
     .input(
