@@ -66,7 +66,7 @@ interface TicketPage {
   nextCursor?: string;
 }
 
-interface SortConfig {
+export interface SortConfig {
   field: 'assignedToMe' | 'priority' | 'updatedAt';
   direction: 'asc' | 'desc';
 }
