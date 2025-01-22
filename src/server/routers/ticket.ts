@@ -105,12 +105,13 @@ export const ticketRouter = router({
             : {}),
         };
 
-        const tickets = await ctx.prisma.ticket.findMany({
+        // Get the latest audit log for each ticket to find the last updater
+        const ticketsWithAuditLogs = await ctx.prisma.ticket.findMany({
           take: limit + 1,
           cursor: cursor ? { id: cursor } : undefined,
           where,
           orderBy: {
-            createdAt: 'desc',
+            updatedAt: 'desc',
           },
           include: {
             createdBy: {
@@ -125,14 +126,59 @@ export const ticketRouter = router({
                 email: true,
               },
             },
+            messages: {
+              select: {
+                id: true,
+                isInternal: true,
+              },
+              where: user.role === UserRole.CUSTOMER ? { isInternal: false } : {},
+            },
+            _count: {
+              select: {
+                messages: true,
+              },
+            },
           },
         });
 
+        // Get the last audit log for each ticket
+        const ticketIds = ticketsWithAuditLogs.map(ticket => ticket.id);
+        const lastAuditLogs = await ctx.prisma.auditLog.findMany({
+          where: {
+            entity: 'TICKET',
+            entityId: { in: ticketIds },
+            action: 'UPDATE',
+          },
+          orderBy: {
+            timestamp: 'desc',
+          },
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+          },
+          distinct: ['entityId'],
+        });
+
+        // Create a map of ticket ID to last updater
+        const lastUpdaterMap = new Map(
+          lastAuditLogs.map(log => [log.entityId, log.user])
+        );
+
         let nextCursor: typeof cursor | undefined = undefined;
-        if (tickets.length > limit) {
-          const nextItem = tickets.pop();
+        if (ticketsWithAuditLogs.length > limit) {
+          const nextItem = ticketsWithAuditLogs.pop();
           nextCursor = nextItem!.id;
         }
+
+        const tickets = ticketsWithAuditLogs.map(ticket => ({
+          ...ticket,
+          lastUpdatedBy: lastUpdaterMap.get(ticket.id) || ticket.createdBy,
+          messageCount: ticket.messages.length,
+        }));
 
         return {
           tickets,

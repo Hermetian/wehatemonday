@@ -4,6 +4,7 @@ import { TicketStatus, TicketPriority } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '@prisma/client';
 import { TicketDialog } from './TicketDialog';
+import { MessageCircle } from 'lucide-react';
 
 // Define the full ticket type as it comes from the server
 export interface ServerTicket {
@@ -26,6 +27,11 @@ export interface ServerTicket {
     name: string | null;
     email: string;
   } | null;
+  lastUpdatedBy: {
+    name: string | null;
+    email: string;
+  };
+  messageCount: number;
 }
 
 interface TicketPage {
@@ -96,7 +102,15 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
           >
             <div className="flex justify-between items-start">
               <div className="space-y-2">
-                <h3 className="font-semibold text-gray-900">{ticket.title}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-gray-900">{ticket.title}</h3>
+                  {ticket.messageCount > 0 && (
+                    <div className="flex items-center gap-1 text-sm text-blue-600">
+                      <MessageCircle className="h-4 w-4" />
+                      <span>{ticket.messageCount}</span>
+                    </div>
+                  )}
+                </div>
                 <p className="text-gray-800 text-sm">{ticket.description}</p>
                 
                 {/* Show customer and assigned agent info for non-customers */}
@@ -163,12 +177,11 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
             </div>
             
             <div className="mt-4 text-sm text-gray-500">
-              Created: {new Date(ticket.createdAt).toLocaleDateString()}
-              {ticket.updatedAt !== ticket.createdAt && (
-                <span className="ml-4">
-                  Updated: {new Date(ticket.updatedAt).toLocaleDateString()}
-                </span>
-              )}
+              <div>Created: {new Date(ticket.createdAt).toLocaleDateString()}</div>
+              <div className="flex items-center gap-1">
+                <span>Last updated: {new Date(ticket.updatedAt).toLocaleString()}</span>
+                <span>by {ticket.lastUpdatedBy.name || ticket.lastUpdatedBy.email}</span>
+              </div>
             </div>
           </div>
         ))}
