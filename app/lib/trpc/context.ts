@@ -2,7 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import type { User } from '@supabase/supabase-js';
 import { inferAsyncReturnType } from '@trpc/server';
 import { TRPCError } from '@trpc/server';
-import prisma from '@/app/lib/prisma';
+import { prisma } from '@/app/prisma';
 
 interface CreateContextOptions {
   req: Request;

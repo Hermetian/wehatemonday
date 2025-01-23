@@ -3,7 +3,7 @@ import { User } from '@supabase/supabase-js';
 import { supabase, supabaseAdmin } from '@/app/lib/auth/supabase';
 import { UserRole } from '@prisma/client';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
-import { prisma } from '@/app/lib/db/prisma';
+import { prisma } from '@/app/prisma';
 
 type AuthContextType = {
   user: User | null;
