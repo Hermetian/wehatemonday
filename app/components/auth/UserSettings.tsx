@@ -35,7 +35,6 @@ import { trpc } from '@/app/lib/trpc/client';
 import type { TRPCClientErrorLike } from '@trpc/client';
 import type { AppRouter } from '@/app/lib/trpc/routers/_app';
 import { useRouter } from 'next/navigation';
-import { cn } from '@/app/lib/utils/common';
 import { UserRole } from '@prisma/client';
 import { StatusBadge } from '@/app/components/ui/status-badge';
 
@@ -123,7 +122,7 @@ export function UserSettings() {
     
     try {
       let hasChanges = false;
-      let needsPasswordVerification = hasEmailChanged || (showPasswordChange && newPassword);
+      const needsPasswordVerification = hasEmailChanged || (showPasswordChange && newPassword);
 
       // Validate new passwords match if changing password
       if (showPasswordChange && newPassword) {
@@ -449,7 +448,7 @@ export function UserSettings() {
           <AlertDialogHeader>
             <AlertDialogTitle>Check Your New Password</AlertDialogTitle>
             <AlertDialogDescription>
-              The new password and confirmation password do not match. Please try again.
+              The new password and confirmation password don&apos;t match. Please try again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
