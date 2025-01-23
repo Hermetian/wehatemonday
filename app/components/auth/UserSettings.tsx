@@ -313,7 +313,7 @@ export function UserSettings() {
                 />
                 {hasEmailChanged && (
                   <p className="text-sm text-muted-foreground">
-                    You'll need to verify your new email address
+                    You&apos;ll need to verify your new email address
                   </p>
                 )}
               </div>

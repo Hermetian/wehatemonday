@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/app/lib/auth/supabase';
 import { UserRole } from '@prisma/client';
@@ -22,7 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
 
-  const updateAuthState = async (session: Session | null) => {
+  const updateAuthState = useCallback(async (session: Session | null) => {
     if (session?.user) {
       setUser(session.user);
       setAccessToken(session.access_token);
@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setRole(null);
       setAccessToken(null);
     }
-  };
+  }, [role]);
 
   const refreshSession = async () => {
     try {
@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     initializeAuth();
-  }, []);
+  }, [updateAuthState]);
 
   // Auth state change listener
   useEffect(() => {

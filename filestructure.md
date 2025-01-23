@@ -1,9 +1,12 @@
 ##This is a description of the current file structure for the project
 
 ##Update this when adding new files or removing files
+.
 ├── README.md
 ├── app
 │   ├── api
+│   │   ├── auth
+│   │   │   └── route.ts
 │   │   └── trpc
 │   │       └── [trpc]
 │   │           └── route.ts
@@ -23,6 +26,8 @@
 │   │   │   ├── TicketList.tsx
 │   │   │   └── TicketMessages.tsx
 │   │   └── ui
+│   │       ├── alert-dialog.tsx
+│   │       ├── alert.tsx
 │   │       ├── badge.tsx
 │   │       ├── button.tsx
 │   │       ├── checkbox.tsx
@@ -31,7 +36,9 @@
 │   │       ├── input.tsx
 │   │       ├── label.tsx
 │   │       ├── select.tsx
-│   │       └── textarea.tsx
+│   │       ├── status-badge.tsx
+│   │       ├── textarea.tsx
+│   │       └── tooltip.tsx
 │   ├── contexts
 │   ├── favicon.ico
 │   ├── globals.css
@@ -89,9 +96,6 @@
 │   ├── next.svg
 │   ├── vercel.svg
 │   └── window.svg
-├── src
-│   └── server
-│       └── context.ts
 ├── tailwind.config.ts
 ├── terminal
 ├── tsconfig.json
