@@ -1,4 +1,4 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createServerClient } from '@supabase/ssr';
 import type { User } from '@supabase/supabase-js';
 import { inferAsyncReturnType } from '@trpc/server';
 import { TRPCError } from '@trpc/server';

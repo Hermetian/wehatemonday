@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { User } from '@supabase/supabase-js';
+import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/app/lib/auth/supabase';
 import { UserRole } from '@prisma/client';
 import { setAccessToken } from '@/app/lib/trpc/client';
@@ -22,7 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
 
-  const updateAuthState = async (session: any) => {
+  const updateAuthState = async (session: Session | null) => {
     if (session?.user) {
       setUser(session.user);
       setAccessToken(session.access_token);
@@ -98,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [initialized, role]);
+  }, [initialized, role, updateAuthState]);
 
   const signIn = async (email: string, password: string): Promise<void> => {
     try {

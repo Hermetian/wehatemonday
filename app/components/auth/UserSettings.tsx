@@ -68,7 +68,7 @@ export function UserSettings() {
           
           if (updateError) throw updateError;
 
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error('Name update error:', error);
           toast.error('Failed to update name');
           setIsLoading(false);
@@ -153,29 +153,6 @@ export function UserSettings() {
     } catch (error) {
       console.error('Error signing out:', error);
       toast.error('Failed to sign out');
-    }
-  };
-
-  const handlePasswordChange = async () => {
-    if (newPassword !== confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword
-      });
-
-      if (error) throw error;
-
-      toast.success('Password updated successfully');
-      setIsSettingsOpen(false);
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (error) {
-      console.error('Error updating password:', error);
-      toast.error('Failed to update password');
     }
   };
 

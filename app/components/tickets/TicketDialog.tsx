@@ -113,10 +113,6 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
     setTags(tags.filter(tag => tag !== tagToRemove));
   };
 
-  const handleTagClick = (tag: string) => {
-    // ... rest of the function
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-100">

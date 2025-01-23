@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 
 type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE';
 type AuditEntity = 'TICKET' | 'USER';
@@ -8,8 +8,8 @@ interface AuditLogParams {
   entity: AuditEntity;
   entityId: string;
   userId: string;
-  oldData?: any;
-  newData: any;
+  oldData?: Prisma.InputJsonValue | null;
+  newData: Prisma.InputJsonValue;
   prisma: PrismaClient;
 }
 
@@ -29,7 +29,7 @@ export async function createAuditLog({
         entity,
         entityId,
         userId,
-        oldData,
+        oldData: oldData ?? Prisma.JsonNull,
         newData,
       },
     });
@@ -41,17 +41,22 @@ export async function createAuditLog({
 }
 
 // Helper function to get changes between old and new data
-export function getChangedFields(oldData: any, newData: any): Record<string, { old: any; new: any }> {
-  const changes: Record<string, { old: any; new: any }> = {};
+export function getChangedFields(
+  oldData: Prisma.JsonValue | null,
+  newData: Prisma.JsonValue
+): Record<string, { old: Prisma.JsonValue | undefined; new: Prisma.JsonValue }> {
+  const changes: Record<string, { old: Prisma.JsonValue | undefined; new: Prisma.JsonValue }> = {};
   
   // Get all unique keys from both objects
-  const keys = new Set([...Object.keys(oldData || {}), ...Object.keys(newData || {})]);
+  const oldObj = oldData as Record<string, Prisma.JsonValue> | null;
+  const newObj = newData as Record<string, Prisma.JsonValue>;
+  const keys = new Set([...Object.keys(oldObj || {}), ...Object.keys(newObj)]);
   
   for (const key of keys) {
-    if (JSON.stringify(oldData?.[key]) !== JSON.stringify(newData?.[key])) {
+    if (JSON.stringify(oldObj?.[key]) !== JSON.stringify(newObj[key])) {
       changes[key] = {
-        old: oldData?.[key],
-        new: newData?.[key],
+        old: oldObj?.[key],
+        new: newObj[key],
       };
     }
   }

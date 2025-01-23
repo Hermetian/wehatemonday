@@ -16,7 +16,6 @@ import {
 } from "@/app/components/ui/select";
 import { Alert, AlertDescription } from "@/app/components/ui/alert";
 import { AlertCircle } from "lucide-react";
-import { cn } from "@/app/lib/utils/common";
 
 export default function Auth() {
   const [email, setEmail] = useState('');

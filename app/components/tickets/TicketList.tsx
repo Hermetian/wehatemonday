@@ -10,7 +10,6 @@ import { Checkbox } from '@/app/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
   DropdownMenuLabel,
@@ -66,11 +65,6 @@ interface RawTicket {
 export interface ProcessedTicket extends Omit<RawTicket, 'status' | 'priority'> {
   status: TicketStatus;
   priority: TicketPriority;
-}
-
-interface RawTicketPage {
-  tickets: RawTicket[];
-  nextCursor?: string;
 }
 
 interface TicketListProps {

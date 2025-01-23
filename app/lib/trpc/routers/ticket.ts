@@ -2,7 +2,7 @@ import { router, protectedProcedure } from '@/app/lib/trpc/trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { TicketStatus, TicketPriority } from '@/app/types/tickets';
-import { UserRole, Ticket, User } from '@prisma/client';
+import { UserRole, Ticket } from '@prisma/client';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
 
 const STAFF_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT] as const;

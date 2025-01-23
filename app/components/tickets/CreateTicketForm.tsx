@@ -47,9 +47,9 @@ export const CreateTicketForm = () => {
         customerId: user.id,
         createdBy: user.id
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating ticket:', error);
-      setError(error.message || 'Failed to create ticket. Please try again.');
+      setError(error instanceof Error ? error.message : 'Failed to create ticket. Please try again.');
     }
   };
 
