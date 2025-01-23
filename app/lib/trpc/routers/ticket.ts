@@ -2,11 +2,28 @@ import { router, protectedProcedure } from '@/app/lib/trpc/trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { TicketStatus, TicketPriority } from '@/app/types/tickets';
-import { UserRole } from '@prisma/client';
+import { UserRole, Ticket, User } from '@prisma/client';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
 
 const STAFF_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT] as const;
 const ASSIGNMENT_ROLES = [UserRole.ADMIN, UserRole.MANAGER] as const;
+
+// Define the return type for tickets
+interface TicketWithRelations extends Ticket {
+  createdBy: {
+    name: string | null;
+    email: string | null;
+  };
+  assignedTo: {
+    name: string | null;
+    email: string | null;
+  } | null;
+  lastUpdatedBy: {
+    name: string | null;
+    email: string | null;
+  };
+  messageCount: number;
+}
 
 export const ticketRouter = router({
   create: protectedProcedure 
@@ -80,7 +97,7 @@ export const ticketRouter = router({
         includeUntagged: z.boolean().optional().default(false),
       })
     )
-    .query(async ({ input, ctx }): Promise<{ tickets: any[]; nextCursor?: string }> => {
+    .query(async ({ input, ctx }): Promise<{ tickets: TicketWithRelations[]; nextCursor?: string }> => {
       try {
         const limit = input.limit ?? 50;
         const cursor = input.cursor;

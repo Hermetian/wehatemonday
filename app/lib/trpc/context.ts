@@ -47,11 +47,11 @@ export async function createContext({ req }: CreateContextOptions) {
             const cookie = req.headers.get('cookie')?.split('; ').find(c => c.startsWith(`${name}=`));
             return cookie ? cookie.split('=')[1] : undefined;
           },
-          set(name: string, value: string, options: CookieOptions) {
+          set() {
             // Cookie setting is handled by middleware
             return;
           },
-          remove(name: string, options: CookieOptions) {
+          remove() {
             // Cookie removal is handled by middleware
             return;
           },

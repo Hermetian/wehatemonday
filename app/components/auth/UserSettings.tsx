@@ -12,9 +12,6 @@ import type { TRPCClientErrorLike } from '@trpc/client';
 import type { AppRouter } from '@/app/lib/trpc/routers/_app';
 import { useRouter } from 'next/navigation';
 
-type FormEvent = React.FormEvent<HTMLFormElement>;
-type InputEvent = React.ChangeEvent<HTMLInputElement>;
-
 export function UserSettings() {
   const router = useRouter();
   const { user, refreshSession, signOut } = useAuth();
@@ -136,9 +133,9 @@ export function UserSettings() {
       }
 
       setIsLoading(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Profile update error:', error);
-      toast.error(error.message || 'Failed to update profile');
+      toast.error(error instanceof Error ? error.message : 'Failed to update profile');
       
       // Reset form with original values
       setName(user?.user_metadata?.name || '');

@@ -34,36 +34,42 @@ import {
 } from '@dnd-kit/sortable';
 import { SortableItem } from '@/app/components/common/SortableItem';
 
-// Define the full ticket type as it comes from the server
-export interface ServerTicket {
+// Define the raw ticket type as it comes from the server
+interface RawTicket {
   id: string;
   createdAt: string;
   updatedAt: string;
   title: string;
   description: string;
-  status: TicketStatus;
-  priority: TicketPriority;
+  status: string;
+  priority: string;
   customerId: string;
   assignedToId: string | null;
   createdById: string;
   tags: string[];
   createdBy: {
     name: string | null;
-    email: string;
+    email: string | null;
   };
   assignedTo: {
     name: string | null;
-    email: string;
+    email: string | null;
   } | null;
   lastUpdatedBy: {
     name: string | null;
-    email: string;
+    email: string | null;
   };
   messageCount: number;
 }
 
-interface TicketPage {
-  tickets: ServerTicket[];
+// Define the processed ticket type with proper enum types
+export interface ProcessedTicket extends Omit<RawTicket, 'status' | 'priority'> {
+  status: TicketStatus;
+  priority: TicketPriority;
+}
+
+interface RawTicketPage {
+  tickets: RawTicket[];
   nextCursor?: string;
 }
 
@@ -112,15 +118,15 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
       ...(filterByUser ? { filterByUser } : {})
     },
     {
-      getNextPageParam: (lastPage: TicketPage) => lastPage.nextCursor
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
     }
   );
 
   // State for the dialog
-  const [selectedTicket, setSelectedTicket] = React.useState<ServerTicket | null>(null);
+  const [selectedTicket, setSelectedTicket] = React.useState<ProcessedTicket | null>(null);
 
   // Transform the data to handle string enums
-  const tickets = React.useMemo(() => {
+  const tickets = React.useMemo((): ProcessedTicket[] => {
     if (!data?.pages) return [];
     return data.pages.flatMap(page => 
       page.tickets.map(ticket => ({

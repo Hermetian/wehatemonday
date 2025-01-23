@@ -24,32 +24,10 @@ import { UserRole } from '@prisma/client';
 import { TicketStatus, TicketPriority } from '@/app/types/tickets';
 import { TicketMessages } from './TicketMessages';
 import { StatusBadge } from '@/app/components/ui/status-badge';
-
-// Import the ServerTicket type from TicketList
-interface ServerTicket {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-  title: string;
-  description: string;
-  status: TicketStatus;
-  priority: TicketPriority;
-  customerId: string;
-  assignedToId: string | null;
-  createdById: string;
-  tags: string[];
-  createdBy: {
-    name: string | null;
-    email: string;
-  };
-  assignedTo: {
-    name: string | null;
-    email: string;
-  } | null;
-}
+import { ProcessedTicket } from './TicketList';
 
 interface TicketDialogProps {
-  ticket: ServerTicket;
+  ticket: ProcessedTicket;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onTicketUpdated: () => void;
@@ -133,6 +111,10 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
 
   const handleRemoveTag = (tagToRemove: string) => {
     setTags(tags.filter(tag => tag !== tagToRemove));
+  };
+
+  const handleTagClick = (tag: string) => {
+    // ... rest of the function
   };
 
   return (
