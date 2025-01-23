@@ -11,34 +11,30 @@ function getBaseUrl() {
 
 export const trpc = createTRPCReact<AppRouter>();
 
+let accessToken: string | null = null;
+
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+}
+
 export function getTRPCClient() {
   return {
     links: [
       httpBatchLink({
         url: `${getBaseUrl()}/api/trpc`,
-        async headers() {
-          const { data: { session }, error } = await supabase.auth.getSession();
-          
-          if (error) {
-            console.error('Error getting session:', error);
-            return {};
-          }
-          
-          if (!session?.access_token) {
-            return {};
-          }
-          
-          return {
-            'Authorization': `Bearer ${session.access_token}`,
-          };
+        headers() {
+          return accessToken 
+            ? { 'Authorization': `Bearer ${accessToken}` }
+            : {};
         },
       }),
     ],
     queryClientConfig: {
       defaultOptions: {
         queries: {
-          retry: false,
+          retry: 1,
           refetchOnWindowFocus: false,
+          staleTime: 5000,
         },
       },
     },

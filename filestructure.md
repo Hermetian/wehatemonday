@@ -3,84 +3,96 @@
 ##Update this when adding new files or removing files
 ├── README.md
 ├── app
-│   ├── api
-│   │   └── trpc
-│   │       └── [trpc]
-│   │           └── route.ts
-│   ├── auth
-│   │   └── signin
-│   │       └── page.tsx
-│   ├── components
-│   │   ├── tickets
-│   │   │   ├── CreateTicketForm.tsx
-│   │   │   ├── TicketDialog.tsx
-│   │   │   ├── TicketList.tsx
-│   │   │   └── TicketMessages.tsx
-│   │   ├── auth
-│   │   │   ├── ProtectedRoute.tsx
-│   │   │   └── UserSettings.tsx
-│   │   ├── common
-│   │   │   ├── Terminal.tsx
-│   │   │   └── SortableItem.tsx
-│   │   └── ui
-│   │       ├── badge.tsx
-│   │       ├── button.tsx
-│   │       ├── checkbox.tsx
-│   │       ├── dialog.tsx
-│   │       ├── dropdown-menu.tsx
-│   │       ├── input.tsx
-│   │       ├── label.tsx
-│   │       ├── select.tsx
-│   │       └── textarea.tsx
-│   ├── homepage
-│   │   └── page.tsx
-│   ├── lib
-│   │   ├── auth
-│   │   │   ├── AuthContext.tsx
-│   │   │   └── supabase.ts
-│   │   ├── db
-│   │   │   └── prisma.ts
-│   │   ├── trpc
-│   │   │   ├── client.ts
-│   │   │   ├── context.ts
-│   │   │   └── routers
-│   │   │       ├── _app.ts
-│   │   │       ├── message.ts
-│   │   │       ├── ticket.ts
-│   │   │       └── user.ts
-│   │   └── utils
-│   │       ├── audit-logger.ts
-│   │       └── common.ts
-│   ├── tickets
-│   │   └── create
-│   │       └── page.tsx
-│   ├── types
-│   │   └── tickets.ts
-│   ├── favicon.ico
-│   ├── globals.css
-│   ├── layout.tsx
-│   ├── page.tsx
-│   └── providers.tsx
+│   ├── api
+│   │   └── trpc
+│   │       └── [trpc]
+│   │           └── route.ts
+│   ├── auth
+│   │   └── signin
+│   │       └── page.tsx
+│   ├── components
+│   │   ├── auth
+│   │   │   ├── ProtectedRoute.tsx
+│   │   │   └── UserSettings.tsx
+│   │   ├── common
+│   │   │   ├── SortableItem.tsx
+│   │   │   └── Terminal.tsx
+│   │   ├── tickets
+│   │   │   ├── CreateTicketForm.tsx
+│   │   │   ├── TicketDialog.tsx
+│   │   │   ├── TicketList.tsx
+│   │   │   └── TicketMessages.tsx
+│   │   └── ui
+│   │       ├── badge.tsx
+│   │       ├── button.tsx
+│   │       ├── checkbox.tsx
+│   │       ├── dialog.tsx
+│   │       ├── dropdown-menu.tsx
+│   │       ├── input.tsx
+│   │       ├── label.tsx
+│   │       ├── select.tsx
+│   │       └── textarea.tsx
+│   ├── contexts
+│   ├── favicon.ico
+│   ├── globals.css
+│   ├── homepage
+│   │   └── page.tsx
+│   ├── layout.tsx
+│   ├── lib
+│   │   ├── auth
+│   │   │   ├── AuthContext.tsx
+│   │   │   └── supabase.ts
+│   │   ├── trpc
+│   │   │   ├── client.ts
+│   │   │   ├── context.ts
+│   │   │   ├── routers
+│   │   │   │   ├── _app.ts
+│   │   │   │   ├── message.ts
+│   │   │   │   ├── ticket.ts
+│   │   │   │   └── user.ts
+│   │   │   └── trpc.ts
+│   │   └── utils
+│   │       ├── audit-logger.ts
+│   │       └── common.ts
+│   ├── page.tsx
+│   ├── prisma.ts
+│   ├── providers.tsx
+│   ├── tickets
+│   │   └── create
+│   │       └── page.tsx
+│   └── types
+│       └── tickets.ts
 ├── components.json
 ├── eslint.config.mjs
+├── filestructure.md
+├── lib
+│   ├── trpc
+│   │   └── routers
+│   └── utils.ts
+├── middleware.ts
+├── next-env.d.ts
 ├── next.config.ts
 ├── package-lock.json
 ├── package.json
 ├── postcss.config.mjs
 ├── prisma
-│   ├── migrations
-│   │   ├── 20250121024911_updating_by_prisma_1
-│   │   │   └── migration.sql
-│   │   ├── 20250122041244_add_audit_logs
-│   │   │   └── migration.sql
-│   │   └── migration_lock.toml
-│   └── schema.prisma
+│   ├── migrations
+│   │   ├── 20250121024911_updating_by_prisma_1
+│   │   │   └── migration.sql
+│   │   ├── 20250122041244_add_audit_logs
+│   │   │   └── migration.sql
+│   │   └── migration_lock.toml
+│   └── schema.prisma
 ├── public
-│   ├── file.svg
-│   ├── globe.svg
-│   ├── next.svg
-│   ├── vercel.svg
-│   └── window.svg
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── next.svg
+│   ├── vercel.svg
+│   └── window.svg
+├── src
+│   └── server
+│       └── context.ts
 ├── tailwind.config.ts
+├── terminal
 ├── tsconfig.json
 └── wehatemonday.code-workspace

@@ -1,12 +1,29 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client'
 
-declare global {
-  // eslint-disable-next-line no-var
-  var prisma: PrismaClient | undefined;
+const prismaClientSingleton = () => {
+  return new PrismaClient({
+    log: ['error'],
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
+  })
 }
 
-export const prisma = global.prisma || new PrismaClient();
+declare global {
+  var prisma: undefined | ReturnType<typeof prismaClientSingleton>
+}
+
+const prisma = globalThis.prisma ?? prismaClientSingleton()
 
 if (process.env.NODE_ENV !== 'production') {
-  global.prisma = prisma;
-} 
+  globalThis.prisma = prisma
+}
+
+// Add browser environment check
+if (typeof window !== 'undefined') {
+  throw new Error('Prisma cannot be used in browser environments')
+}
+
+export default prisma

@@ -2,7 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import type { User } from '@supabase/supabase-js';
 import { inferAsyncReturnType } from '@trpc/server';
 import { TRPCError } from '@trpc/server';
-import { prisma } from '@/app/prisma';
+import prisma from '@/app/prisma';
 
 interface CreateContextOptions {
   req: Request;
@@ -12,47 +12,26 @@ interface ContextUser extends User {
   role?: string;
 }
 
-async function getUserRole(userId: string, retries = 3): Promise<string | undefined> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      // Ensure connection is ready
-      await prisma.$connect();
-      
-      const dbUser = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { role: true }
-      });
-
-      // Explicitly disconnect after query
-      await prisma.$disconnect();
-      
-      if (!dbUser) {
-        console.warn(`No user found with ID: ${userId}`);
-        return undefined;
-      }
-      
-      return dbUser.role;
-    } catch (error) {
-      console.error(`Attempt ${i + 1} failed to get user role for ${userId}:`, error);
-      
-      // Ensure we disconnect on error
-      try {
-        await prisma.$disconnect();
-      } catch (disconnectError) {
-        console.error('Error disconnecting from database:', disconnectError);
-      }
-
-      if (i === retries - 1) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to fetch user role after multiple attempts',
-          cause: error
-        });
-      }
-      
-      // Wait before retrying (exponential backoff)
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 100));
+async function getUserRole(userId: string): Promise<string | undefined> {
+  try {
+    const dbUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    });
+    
+    if (!dbUser) {
+      console.warn(`No user found with ID: ${userId}`);
+      return undefined;
     }
+    
+    return dbUser.role;
+  } catch (error) {
+    console.error(`Failed to get user role for ${userId}:`, error);
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'Failed to fetch user role',
+      cause: error
+    });
   }
 }
 

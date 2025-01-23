@@ -18,7 +18,8 @@ type InputEvent = React.ChangeEvent<HTMLInputElement>;
 export function UserSettings() {
   const router = useRouter();
   const { user, refreshSession, signOut } = useAuth();
-  const [isOpen, setIsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isLogoutOpen, setIsLogoutOpen] = useState(false);
   const [name, setName] = useState(user?.user_metadata?.name || '');
   const [email, setEmail] = useState(user?.email || '');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -36,8 +37,7 @@ export function UserSettings() {
     }
   });
 
-  const handleUpdateProfile = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleUpdateProfile = async () => {
     if (isLoading) return;
     setIsLoading(true);
     
@@ -105,6 +105,12 @@ export function UserSettings() {
 
       // Update password if provided
       if (newPassword && currentPassword) {
+        if (newPassword !== confirmPassword) {
+          toast.error('Passwords do not match');
+          setIsLoading(false);
+          return;
+        }
+
         hasChanges = true;
         const { error: passwordError } = await supabase.auth.updateUser({
           password: newPassword
@@ -126,6 +132,7 @@ export function UserSettings() {
         // Refresh the session to get updated user data
         await refreshSession();
         toast.success('Profile updated successfully');
+        setIsSettingsOpen(false);
       }
 
       setIsLoading(false);
@@ -142,8 +149,10 @@ export function UserSettings() {
 
   const handleSignOut = async () => {
     try {
-      await signOut();
-      router.push('/auth/signin');
+      setIsLogoutOpen(false); // Close the dialog first
+      await signOut(); // Wait for sign out to complete
+      router.replace('/auth/signin'); // Use replace instead of push to prevent back navigation
+      router.refresh(); // Force a router refresh to ensure clean state
     } catch (error) {
       console.error('Error signing out:', error);
       toast.error('Failed to sign out');
@@ -164,7 +173,7 @@ export function UserSettings() {
       if (error) throw error;
 
       toast.success('Password updated successfully');
-      setIsOpen(false);
+      setIsSettingsOpen(false);
       setNewPassword('');
       setConfirmPassword('');
     } catch (error) {
@@ -175,7 +184,7 @@ export function UserSettings() {
 
   return (
     <div className="flex items-center gap-2">
-      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
         <DialogTrigger asChild>
           <Button variant="ghost" size="icon">
             <Cog className="h-5 w-5" />
@@ -187,11 +196,30 @@ export function UserSettings() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
+              <Label htmlFor="name">Display Name</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 value={user?.email || ''}
                 disabled
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="current-password">Current Password</Label>
+              <Input
+                id="current-password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
                 className="w-full"
               />
             </div>
@@ -216,19 +244,39 @@ export function UserSettings() {
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsOpen(false)}>
+              <Button variant="outline" onClick={() => setIsSettingsOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handlePasswordChange}>
-                Update Password
+              <Button onClick={handleUpdateProfile}>
+                Save Changes
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
-      <Button variant="ghost" size="icon" onClick={handleSignOut}>
-        <LogOut className="h-5 w-5" />
-      </Button>
+      <Dialog open={isLogoutOpen} onOpenChange={setIsLogoutOpen}>
+        <DialogTrigger asChild>
+          <Button variant="ghost" size="icon" title="Sign Out">
+            <LogOut className="h-5 w-5" />
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sign Out</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p>Are you sure you want to sign out?</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsLogoutOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleSignOut}>
+                Sign Out
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 

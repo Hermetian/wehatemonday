@@ -197,7 +197,7 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
               className="border-white/50 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
             />
             <label htmlFor="show-completed" className="text-sm text-white font-medium select-none">
-              Show completed tickets
+              Show closed/resolved tickets
             </label>
           </div>
 

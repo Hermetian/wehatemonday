@@ -23,6 +23,7 @@ import { trpc } from '@/app/lib/trpc/client';
 import { UserRole } from '@prisma/client';
 import { TicketStatus, TicketPriority } from '@/app/types/tickets';
 import { TicketMessages } from './TicketMessages';
+import { StatusBadge } from '@/app/components/ui/status-badge';
 
 // Import the ServerTicket type from TicketList
 interface ServerTicket {
@@ -136,31 +137,33 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-100">
         <DialogHeader>
-          <DialogTitle>Ticket Details</DialogTitle>
+          <DialogTitle className="text-xl font-bold text-gray-900">Ticket Details</DialogTitle>
         </DialogHeader>
 
         <div className="grid gap-6">
           {/* Ticket Details Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
+              <Label htmlFor="title" className="text-gray-700">Title</Label>
               <Input
                 id="title"
                 value={title}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
                 disabled={!canEditAll}
+                className="bg-white border-gray-200"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description" className="text-gray-700">Description</Label>
               <Textarea
                 id="description"
                 value={description}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
                 rows={4}
+                className="bg-white border-gray-200"
               />
             </div>
 
@@ -168,15 +171,17 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
               <>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="status">Status</Label>
+                    <Label htmlFor="status" className="text-gray-700">Status</Label>
                     <Select value={status} onValueChange={(value: TicketStatus) => setStatus(value)}>
-                      <SelectTrigger>
+                      <SelectTrigger className="bg-white border-gray-200">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {Object.values(TicketStatus).map((s) => (
                           <SelectItem key={s} value={s}>
-                            {s}
+                            <div className="flex items-center gap-2">
+                              <StatusBadge status={s}>{s}</StatusBadge>
+                            </div>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -184,15 +189,17 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="priority">Priority</Label>
+                    <Label htmlFor="priority" className="text-gray-700">Priority</Label>
                     <Select value={priority} onValueChange={(value: TicketPriority) => setPriority(value)}>
-                      <SelectTrigger>
+                      <SelectTrigger className="bg-white border-gray-200">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {Object.values(TicketPriority).map((p) => (
                           <SelectItem key={p} value={p}>
-                            {p}
+                            <div className="flex items-center gap-2">
+                              <StatusBadge priority={p}>{p}</StatusBadge>
+                            </div>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -201,25 +208,26 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Tags</Label>
+                  <Label className="text-gray-700">Tags</Label>
                   <div className="flex gap-2">
                     <Input
                       value={newTag}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewTag(e.target.value)}
                       placeholder="Add a tag"
+                      className="bg-white border-gray-200"
                     />
-                    <Button type="button" onClick={handleAddTag}>
+                    <Button type="button" onClick={handleAddTag} variant="secondary">
                       Add
                     </Button>
                   </div>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {tags.map((tag: string) => (
-                      <Badge key={tag} variant="secondary" className="gap-1">
+                      <Badge key={tag} variant="secondary" className="bg-gray-100 text-gray-800 gap-1">
                         {tag}
                         <button
                           type="button"
                           onClick={() => handleRemoveTag(tag)}
-                          className="ml-1 hover:text-destructive"
+                          className="ml-1 hover:text-red-600"
                         >
                           <X className="h-3 w-3" />
                         </button>
@@ -232,19 +240,22 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
 
             {canAssign && staffUsers && (
               <div className="space-y-2">
-                <Label htmlFor="assignedTo">Assigned To</Label>
+                <Label htmlFor="assignedTo" className="text-gray-700">Assigned To</Label>
                 <Select
                   value={assignedToId || 'unassigned'}
                   onValueChange={(value) => setAssignedToId(value === 'unassigned' ? null : value)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-white border-gray-200">
                     <SelectValue placeholder="Unassigned" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unassigned">Unassigned</SelectItem>
                     {staffUsers.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
-                        {user.name || user.email} ({user.role})
+                        <div className="flex items-center gap-2">
+                          {user.name || user.email}
+                          <StatusBadge role={user.role}>{user.role}</StatusBadge>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -252,23 +263,23 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
               </div>
             )}
 
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={updateMutation.isLoading}>
-                {updateMutation.isLoading ? 'Saving...' : 'Save Changes'}
-              </Button>
+            <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+              <div className="flex gap-2">
+                <StatusBadge status={status}>{status}</StatusBadge>
+                <StatusBadge priority={priority}>{priority}</StatusBadge>
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Save Changes</Button>
+              </div>
             </div>
           </form>
 
           {/* Messages Section */}
-          <div className="border-t pt-6">
-            <h3 className="text-lg font-semibold mb-4">Messages</h3>
+          <div className="border-t border-gray-200 pt-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Messages</h3>
             <TicketMessages ticketId={ticket.id} />
           </div>
         </div>

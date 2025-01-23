@@ -12,4 +12,5 @@ const handler = (req: Request) =>
 
 export { handler as GET, handler as POST };
 
-export const runtime = 'edge'; 
+// Use Node.js runtime instead of Edge for Prisma compatibility
+export const runtime = 'nodejs'; 
