@@ -6,7 +6,15 @@ import { createAuditLog } from '@/app/lib/utils/audit-logger';
 
 export async function POST(request: Request) {
   try {
-    const { email, role, action } = await request.json();
+    const body = await request.json();
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+
+    const { email, role, action } = body;
+    if (!email || !action) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
     
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,6 +41,14 @@ export async function POST(request: Request) {
     
     if (authError || !supabaseUser) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+
+    // Verify database connection before proceeding
+    try {
+      await prisma.$connect();
+    } catch (dbError) {
+      console.error('Database connection error:', dbError);
+      return NextResponse.json({ error: 'Database connection failed' }, { status: 503 });
     }
 
     if (action === 'signup') {
@@ -94,15 +110,19 @@ export async function POST(request: Request) {
         select: { role: true }
       });
 
-      return NextResponse.json({ user: supabaseUser, role: dbUser?.role });
+      if (!dbUser) {
+        return NextResponse.json({ error: 'User not found in database' }, { status: 404 });
+      }
+
+      return NextResponse.json({ user: supabaseUser, role: dbUser.role });
     }
 
-    throw new Error('Invalid action');
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
   } catch (error) {
     console.error('Auth error:', error);
-    return NextResponse.json(
-      { error: 'Authentication failed' },
-      { status: 401 }
-    );
+    const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  } finally {
+    await prisma.$disconnect();
   }
 } 

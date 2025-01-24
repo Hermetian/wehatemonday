@@ -31,6 +31,7 @@ export const ticketRouter = router({
       z.object({
         title: z.string().min(1),
         description: z.string(),
+        descriptionHtml: z.string(),
         priority: z.nativeEnum(TicketPriority),
         customerId: z.string(),
         createdBy: z.string(),
@@ -280,11 +281,12 @@ export const ticketRouter = router({
     .input(
       z.object({
         id: z.string(),
-        title: z.string().min(1).optional(),
+        title: z.string().optional(),
         description: z.string().optional(),
+        descriptionHtml: z.string().optional(),
         status: z.nativeEnum(TicketStatus).optional(),
         priority: z.nativeEnum(TicketPriority).optional(),
-        assignedToId: z.string().optional(),
+        assignedToId: z.string().nullable().optional(),
         tags: z.array(z.string()).optional(),
       })
     )
@@ -293,23 +295,32 @@ export const ticketRouter = router({
         // Get the user's role
         const user = await ctx.prisma.user.findUnique({
           where: { id: ctx.user.id },
-          select: { role: true }
+          select: { role: true },
         });
 
         if (!user) {
           throw new TRPCError({
-            code: 'UNAUTHORIZED',
+            code: 'NOT_FOUND',
             message: 'User not found',
           });
         }
 
-        // Get the current ticket for audit logging
-        const existingTicket = await ctx.prisma.ticket.findUnique({
+        // Get the current ticket state
+        const currentTicket = await ctx.prisma.ticket.findUnique({
           where: { id: input.id },
-          include: { createdBy: true }
+          select: {
+            customerId: true,
+            assignedToId: true,
+            title: true,
+            description: true,
+            descriptionHtml: true,
+            status: true,
+            priority: true,
+            tags: true,
+          },
         });
 
-        if (!existingTicket) {
+        if (!currentTicket) {
           throw new TRPCError({
             code: 'NOT_FOUND',
             message: 'Ticket not found',
@@ -318,57 +329,48 @@ export const ticketRouter = router({
 
         // Check permissions
         const canEditAll = STAFF_ROLES.includes(user.role as typeof STAFF_ROLES[number]);
-        const isTicketOwner = existingTicket.createdById === ctx.user.id;
+        const canAssign = ASSIGNMENT_ROLES.includes(user.role as typeof ASSIGNMENT_ROLES[number]);
+        const isCustomer = user.role === UserRole.CUSTOMER;
 
-        // If user is not authorized to edit all fields and trying to edit restricted fields
-        if (!canEditAll && (input.title || input.status || input.priority || input.assignedToId || input.tags)) {
+        // Customers can only update their own tickets
+        if (isCustomer && currentTicket.customerId !== ctx.user.id) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'You do not have permission to edit these fields',
+            message: 'You can only update your own tickets',
           });
         }
 
-        // If trying to edit description, must be owner or have elevated permissions
-        if (input.description && !canEditAll && !isTicketOwner) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'You do not have permission to edit the description',
-          });
+        // Validate update permissions
+        if (!canEditAll) {
+          // Customers can only update description
+          if (isCustomer) {
+            const allowedUpdates = ['description', 'descriptionHtml'];
+            const attemptedUpdates = Object.keys(input).filter(key => key !== 'id');
+            const hasDisallowedUpdates = attemptedUpdates.some(update => !allowedUpdates.includes(update));
+
+            if (hasDisallowedUpdates) {
+              throw new TRPCError({
+                code: 'FORBIDDEN',
+                message: 'You can only update the description',
+              });
+            }
+          }
+
+          // Non-admin staff can't update certain fields
+          if (!canAssign && input.assignedToId !== undefined) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'You do not have permission to assign tickets',
+            });
+          }
         }
 
-        // If trying to assign, must be admin or manager
-        if (input.assignedToId && !ASSIGNMENT_ROLES.includes(user.role as typeof ASSIGNMENT_ROLES[number])) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'Only admins and managers can assign tickets',
-          });
-        }
-
-        const updatedTicket = await ctx.prisma.ticket.update({
+        // Update the ticket
+        const ticket = await ctx.prisma.ticket.update({
           where: { id: input.id },
           data: {
-            ...(input.title && { title: input.title }),
-            ...(input.description && { description: input.description }),
-            ...(input.status && { status: input.status }),
-            ...(input.priority && { priority: input.priority }),
-            ...(input.assignedToId && { 
-              assignedTo: { connect: { id: input.assignedToId } }
-            }),
-            ...(input.tags && { tags: input.tags }),
-          },
-          include: {
-            createdBy: {
-              select: {
-                name: true,
-                email: true,
-              },
-            },
-            assignedTo: {
-              select: {
-                name: true,
-                email: true,
-              },
-            },
+            ...input,
+            updatedAt: new Date(),
           },
         });
 
@@ -376,14 +378,14 @@ export const ticketRouter = router({
         await createAuditLog({
           action: 'UPDATE',
           entity: 'TICKET',
-          entityId: input.id,
+          entityId: ticket.id,
           userId: ctx.user.id,
-          oldData: existingTicket,
-          newData: updatedTicket,
+          oldData: currentTicket,
+          newData: ticket,
           prisma: ctx.prisma,
         });
 
-        return updatedTicket;
+        return ticket;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

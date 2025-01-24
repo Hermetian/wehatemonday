@@ -8,7 +8,6 @@ import {
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
-import { Textarea } from '@/app/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -25,6 +24,9 @@ import { TicketStatus, TicketPriority } from '@/app/types/tickets';
 import { TicketMessages } from './TicketMessages';
 import { StatusBadge } from '@/app/components/ui/status-badge';
 import { ProcessedTicket } from './TicketList';
+import { RichTextEditor, RichTextContent } from '@/app/components/ui/rich-text-editor';
+import { inferRouterInputs } from '@trpc/server';
+import type { AppRouter } from '@/app/lib/trpc/routers/_app';
 
 interface TicketDialogProps {
   ticket: ProcessedTicket;
@@ -35,6 +37,8 @@ interface TicketDialogProps {
 
 const STAFF_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT] as const;
 const ASSIGNMENT_ROLES = [UserRole.ADMIN, UserRole.MANAGER] as const;
+
+type UpdateTicketInput = inferRouterInputs<AppRouter>['ticket']['update'];
 
 export const TicketDialog: React.FC<TicketDialogProps> = ({
   ticket,
@@ -48,11 +52,13 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
   // Form state
   const [title, setTitle] = React.useState(ticket.title);
   const [description, setDescription] = React.useState(ticket.description);
+  const [descriptionHtml, setDescriptionHtml] = React.useState(ticket.descriptionHtml);
   const [status, setStatus] = React.useState<TicketStatus>(ticket.status);
   const [priority, setPriority] = React.useState<TicketPriority>(ticket.priority);
   const [assignedToId, setAssignedToId] = React.useState<string | null>(ticket.assignedToId);
   const [tags, setTags] = React.useState(ticket.tags);
   const [newTag, setNewTag] = React.useState('');
+  const [isEditing, setIsEditing] = React.useState(false);
 
   // Get staff users for assignment
   const { data: staffUsers } = trpc.ticket.getStaffUsers.useQuery(undefined, {
@@ -73,17 +79,11 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
-    const updates: Partial<{
-      title: string;
-      description: string;
-      status: TicketStatus;
-      priority: TicketPriority;
-      assignedToId: string;
-      tags: string[];
-    }> = {};
+    const updates: Partial<Omit<UpdateTicketInput, 'id'>> = {};
     
     // Only include changed fields
     if (description !== ticket.description) updates.description = description;
+    if (descriptionHtml !== ticket.descriptionHtml) updates.descriptionHtml = descriptionHtml;
     if (canEditAll) {
       if (title !== ticket.title) updates.title = title;
       if (status !== ticket.status) updates.status = status;
@@ -91,7 +91,7 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
       if (JSON.stringify(tags) !== JSON.stringify(ticket.tags)) updates.tags = tags;
     }
     if (canAssign && assignedToId !== ticket.assignedToId) {
-      updates.assignedToId = assignedToId || undefined;
+      updates.assignedToId = assignedToId;
     }
 
     if (Object.keys(updates).length > 0) {
@@ -136,13 +136,54 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
 
             <div className="space-y-2">
               <Label htmlFor="description" className="text-gray-700">Description</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
-                rows={4}
-                className="bg-white border-gray-200"
-              />
+              <div className="mt-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-gray-900">Description</h3>
+                  {canEditAll && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsEditing(!isEditing)}
+                    >
+                      {isEditing ? 'Cancel' : 'Edit'}
+                    </Button>
+                  )}
+                </div>
+                {isEditing ? (
+                  <div className="mt-2 space-y-4">
+                    <RichTextEditor
+                      content={description}
+                      onChange={(html) => {
+                        setDescription(html);
+                        setDescriptionHtml(html);
+                      }}
+                      placeholder="Edit description..."
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIsEditing(false);
+                          setDescription(ticket.description);
+                          setDescriptionHtml(ticket.descriptionHtml);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="submit"
+                        disabled={updateMutation.isLoading}
+                      >
+                        {updateMutation.isLoading ? 'Saving...' : 'Save'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2 prose prose-sm max-w-none">
+                    <RichTextContent content={ticket.descriptionHtml || ticket.description} />
+                  </div>
+                )}
+              </div>
             </div>
 
             {canEditAll && (

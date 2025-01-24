@@ -3,8 +3,6 @@ import { trpc } from '@/app/lib/trpc/client';
 import { useAuth } from '@/app/lib/auth/AuthContext';
 import { UserRole } from '@prisma/client';
 import { Button } from '@/app/components/ui/button';
-import { Textarea } from '@/app/components/ui/textarea';
-import { Checkbox } from '@/app/components/ui/checkbox';
 import { Label } from '@/app/components/ui/label';
 import { cn } from '@/app/lib/utils/common';
 import {
@@ -13,6 +11,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/app/components/ui/tooltip";
+import { RichTextEditor, RichTextContent } from '@/app/components/ui/rich-text-editor';
 
 interface TicketMessagesProps {
   ticketId: string;
@@ -21,6 +20,7 @@ interface TicketMessagesProps {
 export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
   const { role } = useAuth();
   const [content, setContent] = React.useState('');
+  const [contentHtml, setContentHtml] = React.useState('');
   const [isInternal, setIsInternal] = React.useState(false);
   const utils = trpc.useContext();
 
@@ -29,6 +29,7 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
   const createMessage = trpc.message.create.useMutation({
     onSuccess: () => {
       setContent('');
+      setContentHtml('');
       setIsInternal(false);
       utils.message.list.invalidate({ ticketId });
     },
@@ -40,6 +41,7 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
 
     await createMessage.mutateAsync({
       content: content.trim(),
+      contentHtml,
       ticketId,
       isInternal,
     });
@@ -68,7 +70,7 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
             >
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
-                  <p className="text-sm text-gray-900">{message.content}</p>
+                  <RichTextContent content={message.contentHtml || message.content} />
                   <p className="text-xs text-gray-500">
                     {new Date(message.createdAt).toLocaleString()}
                     {message.isInternal && (
@@ -92,12 +94,14 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
           <Label htmlFor="message" className="text-sm font-medium text-gray-700">
             Add a message
           </Label>
-          <Textarea
-            id="message"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
+          <RichTextEditor
+            content={content}
+            onChange={(html) => {
+              setContent(html);
+              setContentHtml(html);
+            }}
             placeholder="Type your message here..."
-            className="min-h-[100px] resize-y border-gray-200 focus:border-blue-500 focus:ring-blue-500 placeholder:text-gray-400"
+            className="min-h-[100px]"
           />
         </div>
 
@@ -106,11 +110,12 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex items-center space-x-2 bg-yellow-50 px-3 py-1.5 rounded-md w-fit hover:bg-yellow-100 transition-colors">
-                  <Checkbox
+                  <input
+                    type="checkbox"
                     id="internal"
                     checked={isInternal}
-                    onCheckedChange={(checked) => setIsInternal(checked as boolean)}
-                    className="border-yellow-500 text-yellow-600 focus:ring-yellow-500"
+                    onChange={(e) => setIsInternal(e.target.checked)}
+                    className="h-4 w-4 rounded border-yellow-500 text-yellow-600 focus:ring-yellow-500"
                   />
                   <Label htmlFor="internal" className="text-sm font-medium text-yellow-800 cursor-pointer">
                     Mark as internal note

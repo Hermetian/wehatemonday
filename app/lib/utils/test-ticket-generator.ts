@@ -17,8 +17,8 @@ export interface TestTicketConfig {
 interface TestTicketMetadata {
   isTest: boolean;
   batchId: string;
-  originatingRole: UserRole;
-  assignedRole: UserRole;
+  originatingRole: string;
+  assignedRole: string;
 }
 
 const DEFAULT_TITLES = [
@@ -126,12 +126,12 @@ export async function generateTestTicketData(prisma: PrismaClient, config: TestT
         updatedAt: creationTime
       };
 
-      const metadata: TestTicketMetadata = {
+      const metadata: Prisma.InputJsonValue = {
         isTest: true,
         batchId,
-        originatingRole: createdByRole,
-        assignedRole: assignedToRole
-      };
+        originatingRole: createdByRole as string,
+        assignedRole: assignedToRole as string
+      } satisfies TestTicketMetadata;
 
       return {
         ...ticketData,

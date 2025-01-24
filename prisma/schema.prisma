@@ -37,6 +37,7 @@ model Ticket {
   id           String    @id @default(cuid())
   title        String
   description  String
+  descriptionHtml String @default("")
   status       String    @default("OPEN")
   priority     String    @default("MEDIUM")
   customerId   String
@@ -56,6 +57,7 @@ model Ticket {
 model Message {
   id         String   @id @default(cuid())
   content    String
+  contentHtml String @default("")
   ticketId   String
   isInternal Boolean  @default(false)
   createdAt  DateTime @default(now())

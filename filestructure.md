@@ -4,85 +4,88 @@
 .
 ├── README.md
 ├── app
-│   ├── api
-│   │   ├── auth
-│   │   │   └── route.ts
-│   │   ├── test
-│   │   │   ├── cleanup
-│   │   │   │   └── route.ts
-│   │   │   └── users
-│   │   │   └── route.ts
-│   │   └── trpc
-│   │       └── [trpc]
-│   │           └── route.ts
-│   ├── auth
-│   │   └── signin
-│   │       └── page.tsx
-│   ├── components
-│   │   ├── auth
-│   │   │   ├── ProtectedRoute.tsx
-│   │   │   └── UserSettings.tsx
-│   │   ├── common
-│   │   │   ├── SortableItem.tsx
-│   │   │   └── Terminal.tsx
-│   │   ├── tickets
-│   │   │   ├── CreateTicketForm.tsx
-│   │   │   ├── TicketDialog.tsx
-│   │   │   ├── TicketList.tsx
-│   │   │   └── TicketMessages.tsx
-│   │   └── ui
-│   │       ├── alert-dialog.tsx
-│   │       ├── alert.tsx
-│   │       ├── badge.tsx
-│   │       ├── button.tsx
-│   │       ├── checkbox.tsx
-│   │       ├── dialog.tsx
-│   │       ├── dropdown-menu.tsx
-│   │       ├── input.tsx
-│   │       ├── label.tsx
-│   │       ├── select.tsx
-│   │       ├── status-badge.tsx
-│   │       ├── textarea.tsx
-│   │       └── tooltip.tsx
-│   ├── contexts
-│   ├── favicon.ico
-│   ├── globals.css
-│   ├── homepage
-│   │   └── page.tsx
-│   ├── layout.tsx
-│   ├── lib
-│   │   ├── auth
-│   │   │   ├── AuthContext.tsx
-│   │   │   └── supabase.ts
-│   │   ├── trpc
-│   │   │   ├── client.ts
-│   │   │   ├── context.ts
-│   │   │   ├── routers
-│   │   │   │   ├── _app.ts
-│   │   │   │   ├── message.ts
-│   │   │   │   ├── ticket.ts
-│   │   │   │   └── user.ts
-│   │   │   └── trpc.ts
-│   │   └── utils
-│   │       ├── audit-logger.ts
-│   │       ├── common.ts
-│   │       ├── test-data-generator.ts
-│   │       └── test-data-cleanup.ts
-│   ├── page.tsx
-│   ├── prisma.ts
-│   ├── providers.tsx
-│   ├── tickets
-│   │   └── create
-│   │       └── page.tsx
-│   └── types
-│       └── tickets.ts
+│   ├── api
+│   │   ├── auth
+│   │   │   └── route.ts
+│   │   ├── test
+│   │   │   ├── cleanup
+│   │   │   │   └── route.ts
+│   │   │   ├── tickets
+│   │   │   │   └── route.ts
+│   │   │   └── users
+│   │   │       └── route.ts
+│   │   └── trpc
+│   │       └── [trpc]
+│   │           └── route.ts
+│   ├── auth
+│   │   └── signin
+│   │       └── page.tsx
+│   ├── components
+│   │   ├── auth
+│   │   │   ├── ProtectedRoute.tsx
+│   │   │   └── UserSettings.tsx
+│   │   ├── common
+│   │   │   ├── SortableItem.tsx
+│   │   │   └── Terminal.tsx
+│   │   ├── tickets
+│   │   │   ├── CreateTicketForm.tsx
+│   │   │   ├── TicketDialog.tsx
+│   │   │   ├── TicketList.tsx
+│   │   │   └── TicketMessages.tsx
+│   │   └── ui
+│   │       ├── alert-dialog.tsx
+│   │       ├── alert.tsx
+│   │       ├── badge.tsx
+│   │       ├── button.tsx
+│   │       ├── checkbox.tsx
+│   │       ├── dialog.tsx
+│   │       ├── dropdown-menu.tsx
+│   │       ├── input.tsx
+│   │       ├── label.tsx
+│   │       ├── select.tsx
+│   │       ├── status-badge.tsx
+│   │       ├── textarea.tsx
+│   │       └── tooltip.tsx
+│   ├── contexts
+│   ├── favicon.ico
+│   ├── globals.css
+│   ├── homepage
+│   │   └── page.tsx
+│   ├── layout.tsx
+│   ├── lib
+│   │   ├── auth
+│   │   │   ├── AuthContext.tsx
+│   │   │   └── supabase.ts
+│   │   ├── trpc
+│   │   │   ├── client.ts
+│   │   │   ├── context.ts
+│   │   │   ├── routers
+│   │   │   │   ├── _app.ts
+│   │   │   │   ├── message.ts
+│   │   │   │   ├── ticket.ts
+│   │   │   │   └── user.ts
+│   │   │   └── trpc.ts
+│   │   └── utils
+│   │       ├── audit-logger.ts
+│   │       ├── common.ts
+│   │       ├── test-data-generator.ts
+│   │       ├── test-ticket-generator.ts
+│   │       └── test-data-cleanup.ts
+│   ├── page.tsx
+│   ├── prisma.ts
+│   ├── providers.tsx
+│   ├── tickets
+│   │   └── create
+│   │       └── page.tsx
+│   └── types
+│       └── tickets.ts
 ├── components.json
 ├── eslint.config.mjs
 ├── filestructure.md
 ├── lib
-│   ├── trpc
-│   │   └── routers
-│   └── utils.ts
+│   ├── trpc
+│   │   └── routers
+│   └── utils.ts
 ├── middleware.ts
 ├── next-env.d.ts
 ├── next.config.ts
@@ -90,22 +93,26 @@
 ├── package.json
 ├── postcss.config.mjs
 ├── prisma
-│   ├── migrations
-│   │   ├── 20250121024911_updating_by_prisma_1
-│   │   │   └── migration.sql
-│   │   ├── 20250122041244_add_audit_logs
-│   │   │   └── migration.sql
-│   │   ├── 20250124014903_add_test_user_fields
-│   │   │   └── migration.sql
-│   │   └── migration_lock.toml
-│   └── schema.prisma
+│   ├── migrations
+│   │   ├── 20250121024911_updating_by_prisma_1
+│   │   │   └── migration.sql
+│   │   ├── 20250122041244_add_audit_logs
+│   │   │   └── migration.sql
+│   │   ├── 20250124014903_add_test_user_fields
+│   │   │   └── migration.sql
+│   │   └── migration_lock.toml
+│   └── schema.prisma
 ├── public
-│   ├── file.svg
-│   ├── globe.svg
-│   ├── next.svg
-│   ├── vercel.svg
-│   └── window.svg
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── next.svg
+│   ├── vercel.svg
+│   └── window.svg
 ├── tailwind.config.ts
 ├── terminal
 ├── tsconfig.json
+├── .cursorrules
+├── .env
+├── .gitignore
+├── .vercel
 └── wehatemonday.code-workspace

@@ -1,14 +1,14 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 
-type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE';
-type AuditEntity = 'TICKET' | 'USER';
+export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE';
+export type AuditEntity = 'TICKET' | 'USER' | 'MESSAGE';
 
 interface AuditLogParams {
   action: AuditAction;
   entity: AuditEntity;
   entityId: string;
   userId: string;
-  oldData?: Prisma.InputJsonValue | null;
+  oldData: Prisma.InputJsonValue | null;
   newData: Prisma.InputJsonValue;
   prisma: PrismaClient;
 }
@@ -23,7 +23,7 @@ export async function createAuditLog({
   prisma,
 }: AuditLogParams) {
   try {
-    return await prisma.auditLog.create({
+    await prisma.auditLog.create({
       data: {
         action,
         entity,

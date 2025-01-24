@@ -40,6 +40,7 @@ interface RawTicket {
   updatedAt: string;
   title: string;
   description: string;
+  descriptionHtml: string;
   status: string;
   priority: string;
   customerId: string;
@@ -69,6 +70,11 @@ export interface ProcessedTicket extends Omit<RawTicket, 'status' | 'priority'> 
 
 interface TicketListProps {
   filterByUser?: string;
+}
+
+interface TicketListResponse {
+  tickets: RawTicket[];
+  nextCursor?: string;
 }
 
 const SORT_LABELS: Record<SortConfig['field'], string> = {
@@ -112,7 +118,7 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
       ...(filterByUser ? { filterByUser } : {})
     },
     {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      getNextPageParam: (lastPage: TicketListResponse) => lastPage.nextCursor,
     }
   );
 
@@ -122,7 +128,7 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
   // Transform the data to handle string enums
   const tickets = React.useMemo((): ProcessedTicket[] => {
     if (!data?.pages) return [];
-    return data.pages.flatMap(page => 
+    return data.pages.flatMap((page: TicketListResponse) => 
       page.tickets.map(ticket => ({
         ...ticket,
         status: ticket.status as TicketStatus,
