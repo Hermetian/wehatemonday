@@ -7,6 +7,11 @@
 │   ├── api
 │   │   ├── auth
 │   │   │   └── route.ts
+│   │   ├── test
+│   │   │   ├── cleanup
+│   │   │   │   └── route.ts
+│   │   │   └── users
+│   │   │   └── route.ts
 │   │   └── trpc
 │   │       └── [trpc]
 │   │           └── route.ts
@@ -60,7 +65,9 @@
 │   │   │   └── trpc.ts
 │   │   └── utils
 │   │       ├── audit-logger.ts
-│   │       └── common.ts
+│   │       ├── common.ts
+│   │       ├── test-data-generator.ts
+│   │       └── test-data-cleanup.ts
 │   ├── page.tsx
 │   ├── prisma.ts
 │   ├── providers.tsx
@@ -87,6 +94,8 @@
 │   │   ├── 20250121024911_updating_by_prisma_1
 │   │   │   └── migration.sql
 │   │   ├── 20250122041244_add_audit_logs
+│   │   │   └── migration.sql
+│   │   ├── 20250124014903_add_test_user_fields
 │   │   │   └── migration.sql
 │   │   └── migration_lock.toml
 │   └── schema.prisma

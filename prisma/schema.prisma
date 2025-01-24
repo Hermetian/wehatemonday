@@ -9,8 +9,11 @@ datasource db {
 
 model User {
   id            String    @id @default(uuid())
-  email         String    @unique
+  email         String    
   name          String?
+  metadata      Json?     // Added for test data tracking
+  testBatchId   String?   // For grouping test data
+  cleanupAt     DateTime? // For scheduled cleanup
   role          UserRole  @default(CUSTOMER)
   assignedTeams Team[]    @relation("TeamMembers")
   createdAt     DateTime  @default(now())
@@ -18,6 +21,9 @@ model User {
   assignedTickets Ticket[] @relation("AssignedTo")
   createdTickets Ticket[] @relation("CreatedBy")
   auditLogs     AuditLog[]
+
+  // This compound unique constraint allows duplicate emails only for test users
+  @@unique([email, testBatchId], name: "email_unique_non_test")
 }
 
 model Team {
