@@ -4,6 +4,8 @@ import { TRPCError } from '@trpc/server';
 import { TicketStatus, TicketPriority } from '@/app/types/tickets';
 import { UserRole, Ticket } from '@prisma/client';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
+import { withCache, CACHE_KEYS } from '@/app/lib/utils/cache';
+import { invalidateTicketCache, invalidateTicketDetail } from '@/app/lib/utils/cache-helpers';
 
 const STAFF_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT] as const;
 const ASSIGNMENT_ROLES = [UserRole.ADMIN, UserRole.MANAGER] as const;
@@ -68,6 +70,9 @@ export const ticketRouter = router({
           prisma: ctx.prisma,
         });
 
+        // Invalidate ticket list cache
+        invalidateTicketCache();
+
         return ticket;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -99,182 +104,230 @@ export const ticketRouter = router({
       })
     )
     .query(async ({ input, ctx }): Promise<{ tickets: TicketWithRelations[]; nextCursor?: string }> => {
-      try {
-        const limit = input.limit ?? 50;
-        const cursor = input.cursor;
+      return withCache(
+        CACHE_KEYS.TICKET_LIST,
+        { ...input, userId: ctx.user.id },
+        async () => {
+          try {
+            const limit = input.limit ?? 50;
+            const cursor = input.cursor;
 
-        // Get the user's role from the database
-        const user = await ctx.prisma.user.findUnique({
-          where: { id: ctx.user.id },
-          select: { role: true }
-        });
+            // Get the user's role from the database
+            const user = await ctx.prisma.user.findUnique({
+              where: { id: ctx.user.id },
+              select: { role: true }
+            });
 
-        if (!user) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'User not found',
-          });
-        }
+            if (!user) {
+              throw new TRPCError({
+                code: 'NOT_FOUND',
+                message: 'User not found',
+              });
+            }
 
-        // Define the where clause based on user role and filters
-        const where = {
-          ...(user.role === UserRole.CUSTOMER
-            ? { customerId: ctx.user.id }
-            : user.role === UserRole.AGENT
-            ? {} // Agents can see all tickets
-            : user.role === UserRole.MANAGER
-            ? {} // Managers can see all tickets
-            : user.role === UserRole.ADMIN
-            ? {} // Admins can see all tickets
-            : { customerId: ctx.user.id }), // Default to only seeing own tickets
-          // Add filterByUser if provided and user has permission
-          ...(input.filterByUser && (user.role !== UserRole.CUSTOMER)
-            ? { customerId: input.filterByUser }
-            : {}),
-          // Hide completed tickets unless explicitly requested
-          ...(!input.showCompleted
-            ? {
-                NOT: {
-                  status: {
-                    in: [TicketStatus.CLOSED, TicketStatus.RESOLVED],
+            // Define the where clause based on user role and filters
+            const where = {
+              ...(user.role === UserRole.CUSTOMER
+                ? { customerId: ctx.user.id }
+                : user.role === UserRole.AGENT
+                ? {} // Agents can see all tickets
+                : user.role === UserRole.MANAGER
+                ? {} // Managers can see all tickets
+                : user.role === UserRole.ADMIN
+                ? {} // Admins can see all tickets
+                : { customerId: ctx.user.id }), // Default to only seeing own tickets
+              // Add filterByUser if provided and user has permission
+              ...(input.filterByUser && (user.role !== UserRole.CUSTOMER)
+                ? { customerId: input.filterByUser }
+                : {}),
+              // Hide completed tickets unless explicitly requested
+              ...(!input.showCompleted
+                ? {
+                    NOT: {
+                      status: {
+                        in: [TicketStatus.CLOSED, TicketStatus.RESOLVED],
+                      },
+                    },
+                  }
+                : {}),
+              // Handle tag filtering
+              ...(input.tags?.length || input.includeUntagged
+                ? {
+                    OR: [
+                      ...(input.tags?.length ? [{ tags: { hasSome: input.tags } }] : []),
+                      ...(input.includeUntagged ? [{ tags: { isEmpty: true } }] : []),
+                    ],
+                  }
+                : {}),
+            };
+
+            // Get tickets with sorting and includes
+            const ticketsWithAuditLogs = await ctx.prisma.ticket.findMany({
+              take: limit + 1,
+              cursor: cursor ? { id: cursor } : undefined,
+              where,
+              orderBy: [
+                { priority: 'desc' },
+                { updatedAt: 'desc' },
+              ],
+              include: {
+                createdBy: {
+                  select: {
+                    name: true,
+                    email: true,
                   },
                 },
-              }
-            : {}),
-          // Handle tag filtering
-          ...(input.tags?.length || input.includeUntagged
-            ? {
-                OR: [
-                  ...(input.tags?.length ? [{ tags: { hasSome: input.tags } }] : []),
-                  ...(input.includeUntagged ? [{ tags: { isEmpty: true } }] : []),
-                ],
-              }
-            : {}),
-        };
-
-        // Get tickets with sorting
-        const ticketsWithAuditLogs = await ctx.prisma.ticket.findMany({
-          take: limit + 1,
-          cursor: cursor ? { id: cursor } : undefined,
-          where,
-          orderBy: [
-            // We'll handle assignedToMe in memory
-            { priority: 'desc' },
-            { updatedAt: 'desc' },
-          ],
-          include: {
-            createdBy: {
-              select: {
-                name: true,
-                email: true,
+                assignedTo: {
+                  select: {
+                    name: true,
+                    email: true,
+                  },
+                },
+                messages: {
+                  select: {
+                    id: true,
+                    isInternal: true,
+                  },
+                  where: user.role === UserRole.CUSTOMER ? { isInternal: false } : {},
+                },
+                _count: {
+                  select: {
+                    messages: true,
+                  },
+                },
               },
-            },
-            assignedTo: {
-              select: {
-                name: true,
-                email: true,
+            });
+
+            // Get the last audit log for each ticket
+            const ticketIds = ticketsWithAuditLogs.map(ticket => ticket.id);
+            const lastAuditLogs = await ctx.prisma.auditLog.findMany({
+              where: {
+                entity: 'TICKET',
+                entityId: { in: ticketIds },
+                action: 'UPDATE',
               },
-            },
-            messages: {
-              select: {
-                id: true,
-                isInternal: true,
+              orderBy: {
+                timestamp: 'desc',
               },
-              where: user.role === UserRole.CUSTOMER ? { isInternal: false } : {},
-            },
-            _count: {
-              select: {
-                messages: true,
+              include: {
+                user: {
+                  select: {
+                    name: true,
+                    email: true,
+                  },
+                },
               },
-            },
-          },
-        });
+              distinct: ['entityId'],
+            });
 
-        // Get the last audit log for each ticket
-        const ticketIds = ticketsWithAuditLogs.map(ticket => ticket.id);
-        const lastAuditLogs = await ctx.prisma.auditLog.findMany({
-          where: {
-            entity: 'TICKET',
-            entityId: { in: ticketIds },
-            action: 'UPDATE',
-          },
-          orderBy: {
-            timestamp: 'desc',
-          },
-          include: {
-            user: {
-              select: {
-                name: true,
-                email: true,
-              },
-            },
-          },
-          distinct: ['entityId'],
-        });
+            // Create a map of ticket ID to last updater
+            const lastUpdaterMap = new Map(
+              lastAuditLogs.map(log => [log.entityId, log.user])
+            );
 
-        // Create a map of ticket ID to last updater
-        const lastUpdaterMap = new Map(
-          lastAuditLogs.map(log => [log.entityId, log.user])
-        );
-
-        let nextCursor: typeof cursor | undefined = undefined;
-        if (ticketsWithAuditLogs.length > limit) {
-          const nextItem = ticketsWithAuditLogs.pop();
-          nextCursor = nextItem!.id;
-        }
-
-        let tickets = ticketsWithAuditLogs.map(ticket => ({
-          ...ticket,
-          lastUpdatedBy: lastUpdaterMap.get(ticket.id) || ticket.createdBy,
-          messageCount: ticket.messages.length,
-        }));
-
-        // Apply sorting based on sortConfig
-        tickets = tickets.sort((a, b) => {
-          for (const { field, direction } of input.sortConfig) {
-            let comparison = 0;
-            
-            switch (field) {
-              case 'assignedToMe':
-                const aAssignedToMe = a.assignedToId === ctx.user.id;
-                const bAssignedToMe = b.assignedToId === ctx.user.id;
-                comparison = Number(bAssignedToMe) - Number(aAssignedToMe);
-                break;
-              
-              case 'priority':
-                const priorityOrder: Record<TicketPriority, number> = {
-                  [TicketPriority.URGENT]: 3,
-                  [TicketPriority.HIGH]: 2,
-                  [TicketPriority.MEDIUM]: 1,
-                  [TicketPriority.LOW]: 0,
-                };
-                comparison = priorityOrder[b.priority as TicketPriority] - priorityOrder[a.priority as TicketPriority];
-                break;
-              
-              case 'updatedAt':
-                comparison = new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-                break;
+            let nextCursor: typeof cursor | undefined = undefined;
+            if (ticketsWithAuditLogs.length > limit) {
+              const nextItem = ticketsWithAuditLogs.pop();
+              nextCursor = nextItem!.id;
             }
 
-            if (comparison !== 0) {
-              return direction === 'desc' ? comparison : -comparison;
-            }
+            let tickets = ticketsWithAuditLogs.map(ticket => ({
+              ...ticket,
+              lastUpdatedBy: lastUpdaterMap.get(ticket.id) || ticket.createdBy,
+              messageCount: ticket.messages.length,
+            }));
+
+            // Apply sorting based on sortConfig
+            tickets = tickets.sort((a, b) => {
+              for (const { field, direction } of input.sortConfig) {
+                let comparison = 0;
+                
+                switch (field) {
+                  case 'assignedToMe':
+                    const aAssignedToMe = a.assignedToId === ctx.user.id;
+                    const bAssignedToMe = b.assignedToId === ctx.user.id;
+                    comparison = Number(bAssignedToMe) - Number(aAssignedToMe);
+                    break;
+                  
+                  case 'priority':
+                    const priorityOrder = {
+                      [TicketPriority.URGENT]: 3,
+                      [TicketPriority.HIGH]: 2,
+                      [TicketPriority.MEDIUM]: 1,
+                      [TicketPriority.LOW]: 0,
+                    };
+                    comparison = priorityOrder[b.priority as TicketPriority] - priorityOrder[a.priority as TicketPriority];
+                    break;
+                  
+                  case 'updatedAt':
+                    comparison = b.updatedAt.getTime() - a.updatedAt.getTime();
+                    break;
+                }
+
+                if (comparison !== 0) {
+                  return direction === 'asc' ? -comparison : comparison;
+                }
+              }
+              return 0;
+            });
+
+            return {
+              tickets,
+              nextCursor,
+            };
+          } catch (error) {
+            if (error instanceof TRPCError) throw error;
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: 'Failed to fetch tickets',
+              cause: error,
+            });
           }
-          return 0;
-        });
+        },
+        {
+          revalidate: 30, // Cache for 30 seconds
+          tags: ['tickets'],
+        }
+      );
+    }),
 
-        return {
-          tickets,
-          nextCursor,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to fetch tickets',
-          cause: error,
-        });
-      }
+  byId: protectedProcedure
+    .input(z.string())
+    .query(async ({ input: ticketId, ctx }) => {
+      return withCache(
+        `${CACHE_KEYS.TICKET_DETAIL}:${ticketId}`,
+        { ticketId },
+        async () => {
+          const ticket = await ctx.prisma.ticket.findUnique({
+            where: { id: ticketId },
+            include: {
+              createdBy: {
+                select: {
+                  name: true,
+                  email: true,
+                },
+              },
+              assignedTo: {
+                select: {
+                  name: true,
+                  email: true,
+                },
+              },
+              messages: true,
+            },
+          });
+
+          if (!ticket) {
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: 'Ticket not found',
+            });
+          }
+
+          return ticket;
+        },
+        { revalidate: 30 } // Cache for 30 seconds
+      );
     }),
 
   update: protectedProcedure
@@ -292,98 +345,26 @@ export const ticketRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        // Get the user's role
-        const user = await ctx.prisma.user.findUnique({
-          where: { id: ctx.user.id },
-          select: { role: true },
-        });
+        const { id, ...updateData } = input;
 
-        if (!user) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'User not found',
-          });
-        }
-
-        // Get the current ticket state
-        const currentTicket = await ctx.prisma.ticket.findUnique({
-          where: { id: input.id },
-          select: {
-            customerId: true,
-            assignedToId: true,
-            title: true,
-            description: true,
-            descriptionHtml: true,
-            status: true,
-            priority: true,
-            tags: true,
-          },
-        });
-
-        if (!currentTicket) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'Ticket not found',
-          });
-        }
-
-        // Check permissions
-        const canEditAll = STAFF_ROLES.includes(user.role as typeof STAFF_ROLES[number]);
-        const canAssign = ASSIGNMENT_ROLES.includes(user.role as typeof ASSIGNMENT_ROLES[number]);
-        const isCustomer = user.role === UserRole.CUSTOMER;
-
-        // Customers can only update their own tickets
-        if (isCustomer && currentTicket.customerId !== ctx.user.id) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'You can only update your own tickets',
-          });
-        }
-
-        // Validate update permissions
-        if (!canEditAll) {
-          // Customers can only update description
-          if (isCustomer) {
-            const allowedUpdates = ['description', 'descriptionHtml'];
-            const attemptedUpdates = Object.keys(input).filter(key => key !== 'id');
-            const hasDisallowedUpdates = attemptedUpdates.some(update => !allowedUpdates.includes(update));
-
-            if (hasDisallowedUpdates) {
-              throw new TRPCError({
-                code: 'FORBIDDEN',
-                message: 'You can only update the description',
-              });
-            }
-          }
-
-          // Non-admin staff can't update certain fields
-          if (!canAssign && input.assignedToId !== undefined) {
-            throw new TRPCError({
-              code: 'FORBIDDEN',
-              message: 'You do not have permission to assign tickets',
-            });
-          }
-        }
-
-        // Update the ticket
         const ticket = await ctx.prisma.ticket.update({
-          where: { id: input.id },
-          data: {
-            ...input,
-            updatedAt: new Date(),
-          },
+          where: { id },
+          data: updateData,
         });
 
-        // Create audit log
         await createAuditLog({
           action: 'UPDATE',
           entity: 'TICKET',
           entityId: ticket.id,
           userId: ctx.user.id,
-          oldData: currentTicket,
+          oldData: input,
           newData: ticket,
           prisma: ctx.prisma,
         });
+
+        // Invalidate both list and detail caches
+        invalidateTicketCache();
+        invalidateTicketDetail(id);
 
         return ticket;
       } catch (error) {

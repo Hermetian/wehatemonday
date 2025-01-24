@@ -23,73 +23,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initialized, setInitialized] = useState(false);
 
   const updateAuthState = useCallback(async (session: Session | null) => {
-    const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] [AuthContext] Updating auth state:`, { 
-      hasSession: !!session,
-      currentRole: role,
-      currentUser: !!user,
-      loading
-    });
-    
-    if (session?.user) {
-      console.log(`[${timestamp}] [AuthContext] Valid session found for:`, session.user.email);
-      setUser(session.user);
-      setAccessToken(session.access_token);
-      
-      if (!role) {
-        console.log(`[${timestamp}] [AuthContext] Fetching role for user:`, session.user.email);
-        try {
-          const response = await fetch('/api/auth', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`
-            },
-            body: JSON.stringify({ 
-              email: session.user.email,
-              action: 'signin'
-            })
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            console.log(`[${timestamp}] [AuthContext] Role fetch successful:`, data);
-            setRole(data.role);
-            // Set loading to false after we have both user and role
-            setLoading(false);
-          } else {
-            const error = await response.json();
-            console.error(`[${timestamp}] [AuthContext] Role fetch failed:`, error);
-            // Set loading to false even if role fetch fails
-            setLoading(false);
-          }
-        } catch (error) {
-          console.error(`[${timestamp}] [AuthContext] Error fetching role:`, error);
-          // Set loading to false on error
-          setLoading(false);
-        }
-      } else {
-        // If we already have a role, we can set loading to false immediately
-        setLoading(false);
-      }
-    } else {
-      console.log(`[${timestamp}] [AuthContext] No session, clearing auth state`);
+    if (!session?.user) {
       setUser(null);
       setRole(null);
       setAccessToken(null);
-      // Set loading to false when clearing auth state
       setLoading(false);
+      return;
     }
-  }, [role, user, loading]);
+
+    setUser(session.user);
+    setAccessToken(session.access_token);
+    
+    if (!role) {
+      try {
+        const response = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ 
+            email: session.user.email,
+            action: 'signin'
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setRole(data.role);
+        }
+      } catch (error) {
+        console.error('Error fetching role:', error);
+      }
+    }
+    
+    setLoading(false);
+  }, [role]);
 
   const refreshSession = useCallback(async () => {
-    console.log('[AuthContext] Refreshing session');
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error) throw error;
       await updateAuthState(session);
     } catch (error) {
-      console.error('[AuthContext] Error refreshing session:', error);
+      console.error('Error refreshing session:', error);
       setUser(null);
       setRole(null);
       setAccessToken(null);
@@ -97,76 +74,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [updateAuthState]);
 
-  // Force loading to false after a timeout
+  // Initial session check - runs once and when updateAuthState changes
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (loading) {
-        console.warn('[AuthContext] Force ending loading state after timeout');
-        setLoading(false);
-      }
-    }, 5000); // 5 second timeout
+    let mounted = true;
 
-    return () => clearTimeout(timeout);
-  }, [loading]);
-
-  // Initial session check
-  useEffect(() => {
-    const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] [AuthContext] Starting auth initialization. Current state:`, {
-      initialized,
-      loading,
-      hasUser: !!user,
-      hasRole: !!role
-    });
-    
     const initializeAuth = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
-        console.log(`[${timestamp}] [AuthContext] Got initial session:`, { hasSession: !!session });
-        await updateAuthState(session);
+        if (mounted) {
+          await updateAuthState(session);
+          setInitialized(true);
+        }
       } catch (error) {
-        console.error(`[${timestamp}] [AuthContext] Error initializing auth:`, error);
-        // Set loading to false on error
-        setLoading(false);
-      } finally {
-        console.log(`[${timestamp}] [AuthContext] Auth initialization complete. State:`, {
-          hasUser: !!user,
-          hasRole: !!role,
-          loading
-        });
-        setInitialized(true);
+        console.error('Error initializing auth:', error);
+        if (mounted) {
+          setLoading(false);
+          setInitialized(true);
+        }
       }
     };
 
     initializeAuth();
-  }, [updateAuthState, user, role, loading, initialized]);
+    return () => { mounted = false; };
+  }, [updateAuthState]);
 
-  // Auth state change listener
+  // Auth state change listener - only set up once after initialization
   useEffect(() => {
-    if (!initialized) {
-      console.log('[AuthContext] Skipping auth listener setup - not initialized');
-      return;
-    }
+    if (!initialized) return;
 
-    console.log('[AuthContext] Setting up auth state listener');
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        const timestamp = new Date().toISOString();
-        console.log(`[${timestamp}] [AuthContext] Auth state changed:`, { 
-          event, 
-          hasSession: !!session,
-          currentState: { hasUser: !!user, hasRole: !!role, loading }
-        });
+      async (_event, session) => {
         await updateAuthState(session);
       }
     );
 
     return () => {
-      console.log('[AuthContext] Cleaning up auth state listener');
       subscription.unsubscribe();
     };
-  }, [initialized, role, updateAuthState, user, loading]);
+  }, [initialized, updateAuthState]); // Only depend on initialized and updateAuthState
+
+  // Force loading to false after a timeout
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (loading) {
+        setLoading(false);
+      }
+    }, 5000);
+
+    return () => clearTimeout(timeout);
+  }, [loading]);
 
   const signIn = async (email: string, password: string): Promise<void> => {
     try {
@@ -253,16 +210,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const value = {
+    user,
+    role,
+    loading,
+    signIn,
+    signUp,
+    signOut,
+    refreshSession,
+  };
+
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      role, 
-      loading, 
-      signIn, 
-      signUp, 
-      signOut,
-      refreshSession 
-    }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

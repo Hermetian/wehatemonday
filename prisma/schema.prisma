@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -23,6 +24,7 @@ model User {
   assignedTeams   Team[]     @relation("TeamMembers")
 
   @@unique([email, testBatchId], name: "email_unique_non_test")
+  @@index([role])
 }
 
 model Team {
@@ -31,6 +33,8 @@ model Team {
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now())
   members   User[]   @relation("TeamMembers")
+
+  @@index([name])
 }
 
 model Ticket {
@@ -52,6 +56,15 @@ model Ticket {
   messages     Message[]
   assignedTo   User?     @relation("AssignedTo", fields: [assignedToId], references: [id])
   createdBy    User      @relation("CreatedBy", fields: [createdById], references: [id])
+
+  @@index([status])
+  @@index([priority])
+  @@index([customerId])
+  @@index([assignedToId])
+  @@index([createdById])
+  @@index([updatedAt])
+  @@index([testBatchId])
+  @@index([tags])
 }
 
 model Message {
@@ -63,6 +76,9 @@ model Message {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @default(now())
   ticket     Ticket   @relation(fields: [ticketId], references: [id])
+
+  @@index([ticketId])
+  @@index([isInternal])
 }
 
 model AuditLog {
@@ -78,6 +94,7 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([userId])
+  @@index([timestamp])
 }
 
 enum UserRole {
