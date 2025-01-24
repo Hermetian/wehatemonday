@@ -25,8 +25,11 @@
 │   │   │   ├── ProtectedRoute.tsx
 │   │   │   └── UserSettings.tsx
 │   │   ├── common
+│   │   │   ├── Navigation.tsx
 │   │   │   ├── SortableItem.tsx
 │   │   │   └── Terminal.tsx
+│   │   ├── teams
+│   │   │   └── TeamManagement.tsx
 │   │   ├── tickets
 │   │   │   ├── CreateTicketForm.tsx
 │   │   │   ├── TicketDialog.tsx
@@ -62,6 +65,7 @@
 │   │   │   ├── routers
 │   │   │   │   ├── _app.ts
 │   │   │   │   ├── message.ts
+│   │   │   │   ├── team.ts
 │   │   │   │   ├── ticket.ts
 │   │   │   │   └── user.ts
 │   │   │   └── trpc.ts
@@ -74,6 +78,8 @@
 │   ├── page.tsx
 │   ├── prisma.ts
 │   ├── providers.tsx
+│   ├── teams
+│   │   └── page.tsx
 │   ├── tickets
 │   │   └── create
 │   │       └── page.tsx

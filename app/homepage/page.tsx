@@ -7,6 +7,7 @@ import { TicketList } from '@/app/components/tickets/TicketList';
 import Terminal from '@/app/components/common/Terminal';
 import { UserRole } from '@prisma/client';
 import { UserSettings } from '@/app/components/auth/UserSettings';
+import { TeamManagement } from '@/app/components/teams/TeamManagement';
 
 const Homepage = () => {
   const router = useRouter();
@@ -21,6 +22,9 @@ const Homepage = () => {
   if (!user) {
     return null;
   }
+
+  const isManager = role === UserRole.MANAGER || role === UserRole.ADMIN;
+  const canCreateTickets = role === UserRole.CUSTOMER || role === UserRole.AGENT || role === UserRole.MANAGER;
 
   // For debugging
   console.log('Current user:', user);
@@ -45,13 +49,21 @@ const Homepage = () => {
           </div>
         )}
 
+        {/* Team Management Section */}
+        {isManager && (
+          <div className="mb-8 bg-gray-800 p-6 rounded-lg">
+            <h2 className="text-xl font-semibold mb-4">Team Management</h2>
+            <TeamManagement />
+          </div>
+        )}
+
         {/* Tickets Section */}
         <div className="mb-8 bg-gray-800 p-6 rounded-lg">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">
               {role === UserRole.CUSTOMER ? 'Your Tickets' : 'All Tickets'}
             </h2>
-            {(role === UserRole.CUSTOMER || role === UserRole.AGENT) && (
+            {canCreateTickets && (
               <button
                 onClick={() => router.push('/tickets/create')}
                 className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md transition-colors"

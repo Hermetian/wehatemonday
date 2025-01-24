@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../trpc";
 import { createAuditLog } from "@/app/lib/utils/audit-logger";
-import { UserRole } from "@prisma/client";
+import { UserRole, Prisma } from "@prisma/client";
+import { TRPCError } from "@trpc/server";
 
 export const userRouter = router({
   getProfile: protectedProcedure
@@ -105,5 +106,64 @@ export const userRouter = router({
       });
 
       return updatedUser;
+    }),
+
+  listByRole: protectedProcedure
+    .input(z.object({
+      role: z.nativeEnum(UserRole),
+      searchQuery: z.string().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user?.role !== UserRole.MANAGER && ctx.user?.role !== UserRole.ADMIN) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only managers and admins can list users by role",
+        });
+      }
+
+      const where: Prisma.UserWhereInput = {
+        role: input.role,
+        ...(input.searchQuery
+          ? {
+              OR: [
+                {
+                  name: {
+                    contains: input.searchQuery,
+                    mode: Prisma.QueryMode.insensitive,
+                  },
+                },
+                {
+                  email: {
+                    contains: input.searchQuery,
+                    mode: Prisma.QueryMode.insensitive,
+                  },
+                },
+              ],
+            }
+          : {}),
+      };
+
+      const users = await ctx.prisma.user.findMany({
+        where,
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true,
+          cleanupAt: true,
+          metadata: true,
+          testBatchId: true,
+        },
+      });
+
+      return users.map(user => ({
+        ...user,
+        createdAt: user.createdAt.toISOString(),
+        updatedAt: user.updatedAt.toISOString(),
+        cleanupAt: user.cleanupAt?.toISOString() || null,
+      }));
     }),
 }); 
