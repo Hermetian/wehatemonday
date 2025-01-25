@@ -278,29 +278,29 @@ export function UserSettings() {
             <Cog className="h-4 w-4" />
           </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader className="space-y-1">
-            <DialogTitle>Account Settings</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Account Settings</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
               Make changes to your account settings here.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={(e) => { e.preventDefault(); handleUpdateProfile(); }} autoComplete="off">
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Display Name</Label>
+                <Label htmlFor="name" className="text-foreground">Display Name</Label>
                 <Input
                   id="name"
                   name="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Your display name"
-                  className="text-foreground"
                   autoComplete="off"
+                  className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground placeholder:text-muted-foreground"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="text-foreground">Email</Label>
                 <Input
                   id="email"
                   name="email"
@@ -308,8 +308,8 @@ export function UserSettings() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Your email address"
-                  className="text-foreground"
                   autoComplete="off"
+                  className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground placeholder:text-muted-foreground"
                 />
                 {hasEmailChanged && (
                   <p className="text-sm text-muted-foreground">
@@ -318,14 +318,14 @@ export function UserSettings() {
                 )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="role">Role</Label>
+                <Label htmlFor="role" className="text-foreground">Role</Label>
                 <Select value={pendingRole} onValueChange={(value: UserRole) => setPendingRole(value)}>
-                  <SelectTrigger className="bg-white border-gray-200">
+                  <SelectTrigger className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-[#1E2D3D] border-[#1E2D3D]">
                     {Object.values(UserRole).map((r) => (
-                      <SelectItem key={r} value={r}>
+                      <SelectItem key={r} value={r} className="text-foreground hover:bg-[#0A1A2F]">
                         <div className="flex items-center gap-2">
                           <StatusBadge role={r}>{r}</StatusBadge>
                         </div>
@@ -338,7 +338,7 @@ export function UserSettings() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full flex justify-between items-center"
+                  className="w-full flex justify-between items-center bg-[#1E2D3D] border-[#1E2D3D] text-foreground hover:bg-[#2E3D4D] hover:text-foreground"
                   onClick={() => setShowPasswordChange(!showPasswordChange)}
                 >
                   Change Password
@@ -351,7 +351,7 @@ export function UserSettings() {
                 {showPasswordChange && (
                   <div className="space-y-2 mt-2">
                     <div className="space-y-2">
-                      <Label htmlFor="new-password">New Password</Label>
+                      <Label htmlFor="new-password" className="text-foreground">New Password</Label>
                       <Input
                         id="new-password"
                         name="new-password"
@@ -359,12 +359,12 @@ export function UserSettings() {
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         placeholder="Enter new password"
-                        className="text-foreground"
                         autoComplete="new-password"
+                        className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground placeholder:text-muted-foreground"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="confirm-new-password">Confirm New Password</Label>
+                      <Label htmlFor="confirm-new-password" className="text-foreground">Confirm New Password</Label>
                       <Input
                         id="confirm-new-password"
                         name="confirm-new-password"
@@ -372,8 +372,8 @@ export function UserSettings() {
                         value={confirmNewPassword}
                         onChange={(e) => setConfirmNewPassword(e.target.value)}
                         placeholder="Confirm new password"
-                        className="text-foreground"
                         autoComplete="new-password"
+                        className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground placeholder:text-muted-foreground"
                       />
                     </div>
                   </div>
@@ -381,7 +381,7 @@ export function UserSettings() {
               </div>
               {(hasEmailChanged || (showPasswordChange && newPassword)) && (
                 <div className="space-y-2">
-                  <Label htmlFor="current-password">Confirm Current Password</Label>
+                  <Label htmlFor="current-password" className="text-foreground">Confirm Current Password</Label>
                   <Input
                     id="current-password"
                     name="current-password"
@@ -389,8 +389,8 @@ export function UserSettings() {
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="Enter current password"
-                    className="text-foreground"
                     autoComplete="current-password"
+                    className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground placeholder:text-muted-foreground"
                   />
                 </div>
               )}
@@ -400,6 +400,7 @@ export function UserSettings() {
                 type="button"
                 variant="secondary"
                 onClick={() => setIsSettingsOpen(false)}
+                className="bg-[#1E2D3D] text-foreground hover:bg-[#2E3D4D] hover:text-foreground"
               >
                 Cancel
               </Button>
@@ -417,10 +418,10 @@ export function UserSettings() {
             <LogOut className="h-4 w-4" />
           </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">
           <DialogHeader>
-            <DialogTitle>Sign Out</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-foreground">Sign Out</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
               Are you sure you want to sign out of your account?
             </DialogDescription>
           </DialogHeader>
@@ -429,6 +430,7 @@ export function UserSettings() {
               type="button"
               variant="secondary"
               onClick={() => setIsLogoutOpen(false)}
+              className="bg-[#1E2D3D] text-foreground hover:bg-[#2E3D4D] hover:text-foreground"
             >
               Cancel
             </Button>
@@ -444,15 +446,18 @@ export function UserSettings() {
       </Dialog>
 
       <AlertDialog open={isPasswordMismatchOpen} onOpenChange={setIsPasswordMismatchOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">
           <AlertDialogHeader>
-            <AlertDialogTitle>Check Your New Password</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-foreground">Check Your New Password</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
               The new password and confirmation password don&apos;t match. Please try again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setIsPasswordMismatchOpen(false)}>
+            <AlertDialogAction 
+              onClick={() => setIsPasswordMismatchOpen(false)}
+              className="bg-[#1E2D3D] text-foreground hover:bg-[#2E3D4D] hover:text-foreground"
+            >
               OK
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -460,15 +465,18 @@ export function UserSettings() {
       </AlertDialog>
 
       <AlertDialog open={isCurrentPasswordIncorrect} onOpenChange={setIsCurrentPasswordIncorrect}>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">
           <AlertDialogHeader>
-            <AlertDialogTitle>Incorrect Password</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-foreground">Incorrect Password</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
               The current password you entered is incorrect. Please try again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setIsCurrentPasswordIncorrect(false)}>
+            <AlertDialogAction 
+              onClick={() => setIsCurrentPasswordIncorrect(false)}
+              className="bg-[#1E2D3D] text-foreground hover:bg-[#2E3D4D] hover:text-foreground"
+            >
               OK
             </AlertDialogAction>
           </AlertDialogFooter>
