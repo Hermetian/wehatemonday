@@ -2,6 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../trpc";
 import { UserRole } from "@prisma/client";
+import { createAuditLog } from "@/app/lib/utils/audit-logger";
+import { supabase } from "@/app/lib/auth/supabase";
 
 const TeamMemberOutput = {
   id: true,
@@ -250,5 +252,72 @@ export const teamRouter = router({
       });
 
       return updatedTeam;
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({
+      teamId: z.string(),
+      password: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user?.role !== UserRole.MANAGER && ctx.user?.role !== UserRole.ADMIN) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only managers and admins can delete teams",
+        });
+      }
+
+      // Verify password
+      const { error } = await supabase.auth.signInWithPassword({
+        email: ctx.user.email!,
+        password: input.password,
+      });
+
+      if (error) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Invalid password",
+        });
+      }
+
+      // Get team data for audit log
+      const team = await ctx.prisma.team.findUnique({
+        where: { id: input.teamId },
+        include: {
+          members: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      if (!team) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Team not found",
+        });
+      }
+
+      // Delete team
+      await ctx.prisma.team.delete({
+        where: { id: input.teamId },
+      });
+
+      // Create audit log
+      await createAuditLog({
+        action: "DELETE",
+        entity: "TEAM",
+        entityId: input.teamId,
+        userId: ctx.user.id,
+        oldData: team,
+        newData: {},
+        prisma: ctx.prisma,
+      });
+
+      return { success: true };
     }),
 }); 

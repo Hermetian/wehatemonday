@@ -1,7 +1,7 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 
 export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE';
-export type AuditEntity = 'TICKET' | 'USER' | 'MESSAGE';
+export type AuditEntity = 'TICKET' | 'USER' | 'MESSAGE' | 'TEAM';
 
 interface AuditLogParams {
   action: AuditAction;

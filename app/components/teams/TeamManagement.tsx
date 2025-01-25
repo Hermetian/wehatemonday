@@ -8,6 +8,7 @@ import { Label } from "@/app/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
 import { trpc } from "@/app/lib/trpc/client";
 import { UserRole } from "@prisma/client";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/app/components/ui/alert-dialog";
 
 // Simplified types to avoid deep type instantiation
 type BasicUser = {
@@ -29,6 +30,9 @@ export function TeamManagement() {
   const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.AGENT);
   const [searchQuery, setSearchQuery] = useState("");
   const [teamName, setTeamName] = useState("");
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const utils = trpc.useContext();
   const { data: teams, isLoading: loadingTeams } = trpc.team.list.useQuery() as { data: BasicTeam[] | undefined, isLoading: boolean };
@@ -61,6 +65,19 @@ export function TeamManagement() {
     }
   });
 
+  const deleteTeam = trpc.team.delete.useMutation({
+    onSuccess: () => {
+      utils.team.list.invalidate();
+      setSelectedTeamId(null);
+      setIsDeleteDialogOpen(false);
+      setDeletePassword("");
+      setDeleteError(null);
+    },
+    onError: (error) => {
+      setDeleteError(error.message);
+    }
+  });
+
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teamName.trim()) return;
@@ -76,6 +93,17 @@ export function TeamManagement() {
     if (!selectedTeamId) return;
     await removeMember.mutate({ teamId: selectedTeamId, userId });
   };
+
+  const handleDeleteTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTeamId || !deletePassword) return;
+    await deleteTeam.mutate({ teamId: selectedTeamId, password: deletePassword });
+  };
+
+  // Filter out current team members from eligible users
+  const filteredEligibleUsers = eligibleUsers?.filter(user => 
+    !teamMembers?.some(member => member.id === user.id)
+  );
 
   return (
     <div className="space-y-6">
@@ -136,16 +164,25 @@ export function TeamManagement() {
                       variant="outline"
                       onClick={() => setSelectedTeamId(team.id)}
                     >
-                      Manage Members
+                      Manage Team
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="max-w-2xl bg-[#0A1A2F] border-[#1E2D3D]">
                     <DialogHeader>
-                      <DialogTitle className="text-foreground">Manage Team Members - {team.name}</DialogTitle>
+                      <DialogTitle className="text-foreground">Manage Team - {team.name}</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-6">
                       <div className="space-y-4">
-                        <h3 className="font-medium text-foreground">Current Team Members</h3>
+                        <div className="flex justify-between items-center">
+                          <h3 className="font-medium text-foreground">Current Team Members</h3>
+                          <Button 
+                            variant="destructive" 
+                            size="sm"
+                            onClick={() => setIsDeleteDialogOpen(true)}
+                          >
+                            Delete Team
+                          </Button>
+                        </div>
                         {loadingMembers ? (
                           <div className="text-foreground">Loading members...</div>
                         ) : (
@@ -200,7 +237,7 @@ export function TeamManagement() {
                           <div className="text-foreground">Loading users...</div>
                         ) : (
                           <div className="space-y-2">
-                            {eligibleUsers?.map((user) => (
+                            {filteredEligibleUsers?.map((user) => (
                               <div key={user.id} className="flex items-center justify-between p-2 border border-[#1E2D3D] rounded bg-[#1E2D3D]">
                                 <div>
                                   <p className="font-medium text-foreground">{user.name}</p>
@@ -228,6 +265,54 @@ export function TeamManagement() {
           ))}
         </div>
       )}
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-foreground">Delete Team</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              This action cannot be undone. Please enter your password to confirm.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <form onSubmit={handleDeleteTeam} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-foreground">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="Enter your password"
+                required
+                className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground"
+              />
+              {deleteError && (
+                <p className="text-sm text-destructive">{deleteError}</p>
+              )}
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel 
+                onClick={() => {
+                  setDeletePassword("");
+                  setDeleteError(null);
+                }}
+                className="bg-[#1E2D3D] text-foreground hover:bg-[#2E3D4D] hover:text-foreground"
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction asChild>
+                <Button 
+                  type="submit"
+                  variant="destructive"
+                  disabled={deleteTeam.isLoading || !deletePassword}
+                >
+                  {deleteTeam.isLoading ? "Deleting..." : "Delete Team"}
+                </Button>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </form>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 } 
