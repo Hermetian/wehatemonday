@@ -320,4 +320,28 @@ export const teamRouter = router({
 
       return { success: true };
     }),
+
+  getUserTeamTags: protectedProcedure
+    .query(async ({ ctx }) => {
+      const teams = await ctx.prisma.team.findMany({
+        where: {
+          members: {
+            some: {
+              id: ctx.user.id
+            }
+          }
+        },
+        select: {
+          tags: true
+        }
+      });
+
+      // Get unique tags from all teams the user is a member of
+      const uniqueTags = new Set<string>();
+      teams.forEach(team => {
+        team.tags.forEach(tag => uniqueTags.add(tag));
+      });
+
+      return Array.from(uniqueTags).sort();
+    }),
 }); 

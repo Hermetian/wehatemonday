@@ -94,6 +94,21 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
   const [selectedTags, setSelectedTags] = React.useState<string[]>([]);
   const [includeUntagged, setIncludeUntagged] = React.useState(false);
   const [isSortMenuOpen, setIsSortMenuOpen] = React.useState(false);
+  const [filterByTeamTags, setFilterByTeamTags] = React.useState(false);
+
+  // Get user's team tags
+  const { data: teamTags } = trpc.team.getUserTeamTags.useQuery(undefined, {
+    enabled: filterByTeamTags,
+  });
+
+  // Effect to update selected tags when filterByTeamTags changes
+  React.useEffect(() => {
+    if (filterByTeamTags && teamTags) {
+      setSelectedTags(teamTags);
+    } else if (!filterByTeamTags) {
+      setSelectedTags([]);
+    }
+  }, [filterByTeamTags, teamTags]);
 
   // Set up DnD sensors
   const sensors = useSensors(
@@ -204,6 +219,19 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
             />
             <label htmlFor="show-completed" className="text-sm text-white font-medium select-none">
               Show closed/resolved tickets
+            </label>
+          </div>
+
+          {/* Filter by team tags toggle */}
+          <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/20">
+            <Checkbox
+              id="filter-team-tags"
+              checked={filterByTeamTags}
+              onCheckedChange={(checked: boolean) => setFilterByTeamTags(checked)}
+              className="border-white/50 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+            />
+            <label htmlFor="filter-team-tags" className="text-sm text-white font-medium select-none">
+              Filter by my team tags
             </label>
           </div>
 
