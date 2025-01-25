@@ -60,10 +60,13 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
   const [newTag, setNewTag] = React.useState('');
   const [isEditing, setIsEditing] = React.useState(false);
 
-  // Get staff users for assignment
-  const { data: staffUsers } = trpc.ticket.getStaffUsers.useQuery(undefined, {
-    enabled: role ? ASSIGNMENT_ROLES.includes(role as typeof ASSIGNMENT_ROLES[number]) : false,
-  });
+  // Get staff users and customer for assignment
+  const { data: assignableUsers } = trpc.ticket.getAssignableUsers.useQuery(
+    { ticketId: ticket.id },
+    {
+      enabled: role ? ASSIGNMENT_ROLES.includes(role as typeof ASSIGNMENT_ROLES[number]) : false,
+    }
+  );
 
   // Update mutation
   const updateMutation = trpc.ticket.update.useMutation({
@@ -180,9 +183,9 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                       <SelectTrigger className="bg-white border-gray-200 text-gray-900">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="bg-white border-gray-200">
                         {Object.values(TicketStatus).map((s) => (
-                          <SelectItem key={s} value={s} className="text-gray-900">
+                          <SelectItem key={s} value={s} className="text-gray-900 data-[highlighted]:bg-gray-100">
                             <div className="flex items-center gap-2">
                               <StatusBadge status={s}>{s}</StatusBadge>
                             </div>
@@ -198,9 +201,9 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                       <SelectTrigger className="bg-white border-gray-200 text-gray-900">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="bg-white border-gray-200">
                         {Object.values(TicketPriority).map((p) => (
-                          <SelectItem key={p} value={p} className="text-gray-900">
+                          <SelectItem key={p} value={p} className="text-gray-900 data-[highlighted]:bg-gray-100">
                             <div className="flex items-center gap-2">
                               <StatusBadge priority={p}>{p}</StatusBadge>
                             </div>
@@ -247,23 +250,27 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
               </>
             )}
 
-            {canAssign && staffUsers && (
+            {canAssign && assignableUsers && (
               <div className="space-y-2">
                 <Label htmlFor="assignedTo" className="text-gray-700">Assigned To</Label>
-                <Select
-                  value={assignedToId || 'unassigned'}
-                  onValueChange={(value) => setAssignedToId(value === 'unassigned' ? null : value)}
+                <Select 
+                  value={assignedToId || 'unassigned'} 
+                  onValueChange={(value: string) => setAssignedToId(value === 'unassigned' ? null : value)}
                 >
                   <SelectTrigger className="bg-white border-gray-200 text-gray-900">
                     <SelectValue placeholder="Unassigned" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="unassigned" className="text-gray-900">Unassigned</SelectItem>
-                    {staffUsers.map((user) => (
-                      <SelectItem key={user.id} value={user.id} className="text-gray-900">
+                  <SelectContent className="bg-white border-gray-200">
+                    <SelectItem value="unassigned" className="text-gray-900 hover:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900">
+                      Unassigned
+                    </SelectItem>
+                    {assignableUsers.map((user) => (
+                      <SelectItem key={user.id} value={user.id} className="text-gray-900 hover:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900">
                         <div className="flex items-center gap-2">
-                          {user.name || user.email}
-                          <StatusBadge role={user.role}>{user.role}</StatusBadge>
+                          <span>{user.name || user.email}</span>
+                          <StatusBadge role={user.isCustomer ? UserRole.CUSTOMER : user.role}>
+                            {user.isCustomer ? 'CUSTOMER' : user.role}
+                          </StatusBadge>
                         </div>
                       </SelectItem>
                     ))}

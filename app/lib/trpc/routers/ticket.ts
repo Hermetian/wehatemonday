@@ -454,4 +454,98 @@ export const ticketRouter = router({
         });
       }
     }),
+
+  getAssignableUsers: protectedProcedure
+    .input(
+      z.object({
+        ticketId: z.string(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      try {
+        // Get all required data in a single transaction to avoid connection issues
+        const result = await ctx.prisma.$transaction(async (tx) => {
+          // Check if user has permission to assign tickets
+          const user = await tx.user.findUnique({
+            where: { id: ctx.user.id },
+            select: { role: true }
+          });
+
+          if (!user || !ASSIGNMENT_ROLES.includes(user.role as typeof ASSIGNMENT_ROLES[number])) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'You do not have permission to assign tickets',
+            });
+          }
+
+          // Get the ticket to find the customer
+          const ticket = await tx.ticket.findUnique({
+            where: { id: input.ticketId },
+            select: { customerId: true }
+          });
+
+          if (!ticket) {
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: 'Ticket not found',
+            });
+          }
+
+          // Get all staff users and the ticket's customer
+          const [staffUsers, customer] = await Promise.all([
+            tx.user.findMany({
+              where: {
+                role: {
+                  in: [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT]
+                }
+              },
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+              },
+              orderBy: [
+                { role: 'asc' },
+                { name: 'asc' },
+              ],
+            }),
+            tx.user.findUnique({
+              where: { id: ticket.customerId },
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+              },
+            }),
+          ]);
+
+          if (!customer) {
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: 'Customer not found',
+            });
+          }
+
+          return {
+            staffUsers,
+            customer,
+          };
+        });
+
+        // Combine staff users and customer, marking the customer
+        return [
+          ...result.staffUsers.map(user => ({ ...user, isCustomer: false })),
+          { ...result.customer, isCustomer: true },
+        ];
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get assignable users',
+          cause: error,
+        });
+      }
+    }),
 }); 

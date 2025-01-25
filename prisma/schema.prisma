@@ -9,19 +9,20 @@ datasource db {
 }
 
 model User {
-  id              String     @id @default(uuid())
-  email           String
-  name            String?
-  role            UserRole   @default(CUSTOMER)
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @default(now())
-  cleanupAt       DateTime?
-  metadata        Json?
-  testBatchId     String?
-  auditLogs       AuditLog[]
-  assignedTickets Ticket[]   @relation("AssignedTo")
-  createdTickets  Ticket[]   @relation("CreatedBy")
-  assignedTeams   Team[]     @relation("TeamMembers")
+  id                 String     @id @default(uuid())
+  email              String
+  name               String?
+  role               UserRole   @default(CUSTOMER)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @default(now())
+  cleanupAt          DateTime?
+  metadata           Json?
+  testBatchId        String?
+  auditLogs          AuditLog[]
+  assignedTickets    Ticket[]   @relation("AssignedTo")
+  createdTickets     Ticket[]   @relation("CreatedBy")
+  lastUpdatedTickets Ticket[]   @relation("LastUpdatedBy")
+  assignedTeams      Team[]     @relation("TeamMembers")
 
   @@unique([email, testBatchId], name: "email_unique_non_test")
   @@index([role])
@@ -54,9 +55,11 @@ model Ticket {
   testBatchId     String?
   metadata        Json?     @default("{}")
   descriptionHtml String    @default("")
+  lastUpdatedById String?
   messages        Message[]
   assignedTo      User?     @relation("AssignedTo", fields: [assignedToId], references: [id])
   createdBy       User      @relation("CreatedBy", fields: [createdById], references: [id])
+  lastUpdatedBy   User?     @relation("LastUpdatedBy", fields: [lastUpdatedById], references: [id])
 
   @@index([status])
   @@index([priority])

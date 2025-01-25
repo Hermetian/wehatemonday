@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { trpc } from "@/app/lib/trpc/client";
 import { UserRole } from "@prisma/client";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/app/components/ui/alert-dialog";
-import { cn } from "@/app/lib/utils/common";
 
 // Simplified types to avoid deep type instantiation
 type BasicUser = {
@@ -49,7 +48,7 @@ export function TeamManagement() {
     { role: selectedRole, searchQuery },
     { enabled: !!selectedTeamId }
   ) as { data: BasicUser[] | undefined, isLoading: boolean };
-  const { data: availableTags = [], isLoading: loadingTags } = trpc.ticket.getAllTags.useQuery();
+  const { data: availableTags = [] } = trpc.ticket.getAllTags.useQuery();
 
   const createTeam = trpc.team.create.useMutation({
     onSuccess: () => {
