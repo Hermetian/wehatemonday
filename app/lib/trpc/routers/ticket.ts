@@ -417,4 +417,30 @@ export const ticketRouter = router({
         });
       }
     }),
+
+  getAllTags: protectedProcedure
+    .query(async ({ ctx }) => {
+      try {
+        const tickets = await ctx.prisma.ticket.findMany({
+          select: {
+            tags: true,
+          },
+        });
+
+        // Get unique tags
+        const tagSet = new Set<string>();
+        tickets.forEach(ticket => {
+          ticket.tags.forEach(tag => tagSet.add(tag));
+        });
+
+        return Array.from(tagSet).sort();
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch tags',
+          cause: error,
+        });
+      }
+    }),
 }); 

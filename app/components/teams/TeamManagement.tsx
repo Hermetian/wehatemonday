@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/app/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/app/components/ui/dialog";
 import { Input } from "@/app/components/ui/input";
@@ -9,6 +9,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { trpc } from "@/app/lib/trpc/client";
 import { UserRole } from "@prisma/client";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/app/components/ui/alert-dialog";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from "@/app/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/app/components/ui/popover";
+import { Check } from "lucide-react";
+import { cn } from "@/app/lib/utils/common";
 
 // Simplified types to avoid deep type instantiation
 type BasicUser = {
@@ -22,6 +36,7 @@ type BasicTeam = {
   id: string;
   name: string;
   members: BasicUser[];
+  tags: string[];
 };
 
 export function TeamManagement() {
@@ -33,6 +48,9 @@ export function TeamManagement() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [newTag, setNewTag] = useState("");
+  const [isTagPopoverOpen, setIsTagPopoverOpen] = useState(false);
+  const popoverContentRef = useRef<HTMLDivElement>(null);
 
   const utils = trpc.useContext();
   const { data: teams, isLoading: loadingTeams } = trpc.team.list.useQuery() as { data: BasicTeam[] | undefined, isLoading: boolean };
@@ -44,6 +62,7 @@ export function TeamManagement() {
     { role: selectedRole, searchQuery },
     { enabled: !!selectedTeamId }
   ) as { data: BasicUser[] | undefined, isLoading: boolean };
+  const { data: availableTags = [], isLoading: loadingTags } = trpc.ticket.getAllTags.useQuery();
 
   const createTeam = trpc.team.create.useMutation({
     onSuccess: () => {
@@ -78,6 +97,19 @@ export function TeamManagement() {
     }
   });
 
+  const addTags = trpc.team.addTags.useMutation({
+    onSuccess: () => {
+      utils.team.list.invalidate();
+      setNewTag("");
+    }
+  });
+
+  const removeTags = trpc.team.removeTags.useMutation({
+    onSuccess: () => {
+      utils.team.list.invalidate();
+    }
+  });
+
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teamName.trim()) return;
@@ -100,10 +132,30 @@ export function TeamManagement() {
     await deleteTeam.mutate({ teamId: selectedTeamId, password: deletePassword });
   };
 
+  const handleAddTag = async (tagValue: string) => {
+    if (!selectedTeamId || !tagValue.trim()) return;
+    await addTags.mutate({ teamId: selectedTeamId, tags: [tagValue.trim()] });
+  };
+
+  const handleRemoveTag = async (tag: string) => {
+    if (!selectedTeamId) return;
+    await removeTags.mutate({ teamId: selectedTeamId, tags: [tag] });
+  };
+
   // Filter out current team members from eligible users
   const filteredEligibleUsers = eligibleUsers?.filter(user => 
     !teamMembers?.some(member => member.id === user.id)
   );
+
+  useEffect(() => {
+    if (isTagPopoverOpen && popoverContentRef.current) {
+      // Focus on the first interactive element when popover opens
+      const firstInput = popoverContentRef.current.querySelector('input');
+      if (firstInput) {
+        (firstInput as HTMLElement).focus();
+      }
+    }
+  }, [isTagPopoverOpen]);
 
   return (
     <div className="space-y-6">
@@ -174,14 +226,155 @@ export function TeamManagement() {
                     <div className="space-y-6">
                       <div className="space-y-4">
                         <div className="flex justify-between items-center">
-                          <h3 className="font-medium text-foreground">Current Team Members</h3>
-                          <Button 
-                            variant="destructive" 
-                            size="sm"
-                            onClick={() => setIsDeleteDialogOpen(true)}
+                          <h3 className="font-medium text-foreground">Team Tags</h3>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {team.tags?.map((tag) => (
+                            <div 
+                              key={tag}
+                              className="flex items-center gap-1 px-2 py-1 bg-[#1E2D3D] rounded-full text-sm"
+                            >
+                              <span className="text-foreground">{tag}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 w-5 p-0 hover:bg-[#2E3D4D]"
+                                onClick={() => handleRemoveTag(tag)}
+                              >
+                                <span className="text-muted-foreground">×</span>
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <Popover 
+                            open={isTagPopoverOpen} 
+                            onOpenChange={(open) => {
+                              if (!open) {
+                                setIsTagPopoverOpen(false);
+                              } else {
+                                setIsTagPopoverOpen(true);
+                              }
+                            }}
                           >
-                            Delete Team
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={isTagPopoverOpen ? "true" : "false"}
+                                aria-controls="tag-search-popover"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsTagPopoverOpen(true);
+                                }}
+                                className="w-full justify-between bg-[#1E2D3D] border-[#1E2D3D] text-foreground hover:bg-[#1E2D3D]"
+                              >
+                                {newTag || "Select a tag..."}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent 
+                              ref={popoverContentRef}
+                              id="tag-search-popover"
+                              className="w-full p-0 bg-[#1E2D3D] border-[#1E2D3D]"
+                              onOpenAutoFocus={(e) => {
+                                e.preventDefault();
+                                const input = popoverContentRef.current?.querySelector('input');
+                                if (input) {
+                                  (input as HTMLElement).focus();
+                                }
+                              }}
+                              onPointerDownOutside={(e) => {
+                                e.stopPropagation();
+                                const target = e.target as HTMLElement;
+                                if (!target?.closest('[role="dialog"]')) {
+                                  setIsTagPopoverOpen(false);
+                                }
+                              }}
+                              onInteractOutside={(e) => {
+                                e.stopPropagation();
+                                const target = e.target as HTMLElement;
+                                if (!target?.closest('[role="dialog"]')) {
+                                  setIsTagPopoverOpen(false);
+                                }
+                              }}
+                              onEscapeKeyDown={() => setIsTagPopoverOpen(false)}
+                              side="bottom"
+                              align="start"
+                              sideOffset={5}
+                              style={{
+                                zIndex: 99999
+                              }}
+                            >
+                              <Command 
+                                className="w-full"
+                                shouldFilter={false}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <CommandInput 
+                                  placeholder="Search tags..." 
+                                  value={newTag}
+                                  onValueChange={(value) => {
+                                    setNewTag(value);
+                                    setIsTagPopoverOpen(true);
+                                  }}
+                                  className="h-9 bg-[#1E2D3D] text-foreground"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                                <CommandEmpty className="py-2 text-sm text-muted-foreground">
+                                  {loadingTags ? "Loading tags..." : "No tags found."}
+                                </CommandEmpty>
+                                <CommandGroup>
+                                  {availableTags
+                                    .filter(tag => {
+                                      const searchLower = newTag.toLowerCase();
+                                      return !team.tags.includes(tag) && 
+                                             (!searchLower || tag.toLowerCase().includes(searchLower));
+                                    })
+                                    .map((tag) => (
+                                      <CommandItem
+                                        key={tag}
+                                        value={tag}
+                                        onSelect={() => {
+                                          setNewTag(tag);
+                                          handleAddTag(tag);
+                                          setIsTagPopoverOpen(false);
+                                        }}
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-foreground cursor-pointer py-3 px-4 transition-colors duration-200 ease-in-out
+                                          hover:bg-[#2E3D4D] hover:text-foreground
+                                          data-[highlighted]:bg-[#2E3D4D] data-[highlighted]:text-foreground
+                                          active:bg-[#3E4B5A] active:text-foreground"
+                                      >
+                                        {tag}
+                                      </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <Button 
+                            onClick={() => {
+                              const trimmedTag = newTag.trim();
+                              if (trimmedTag) {
+                                handleAddTag(trimmedTag);
+                                setNewTag("");
+                              }
+                            }}
+                            disabled={!newTag.trim()}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                          >
+                            Add Tag
                           </Button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <h3 className="font-medium text-foreground">Current Team Members</h3>
                         </div>
                         {loadingMembers ? (
                           <div className="text-foreground">Loading members...</div>
@@ -256,6 +449,16 @@ export function TeamManagement() {
                             ))}
                           </div>
                         )}
+                      </div>
+
+                      <div className="pt-6 border-t border-[#1E2D3D]">
+                        <Button 
+                          variant="destructive" 
+                          onClick={() => setIsDeleteDialogOpen(true)}
+                          className="w-full"
+                        >
+                          Delete Team
+                        </Button>
                       </div>
                     </div>
                   </DialogContent>
