@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/app/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/app/components/ui/dialog";
 import { Input } from "@/app/components/ui/input";
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { trpc } from "@/app/lib/trpc/client";
 import { UserRole } from "@prisma/client";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/app/components/ui/alert-dialog";
+import { cn } from "@/app/lib/utils/common";
 
 // Simplified types to avoid deep type instantiation
 type BasicUser = {
@@ -22,6 +23,7 @@ type BasicTeam = {
   id: string;
   name: string;
   members: BasicUser[];
+  tags: string[];
 };
 
 export function TeamManagement() {
@@ -33,6 +35,9 @@ export function TeamManagement() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [newTag, setNewTag] = useState("");
+  const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  const tagInputRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useContext();
   const { data: teams, isLoading: loadingTeams } = trpc.team.list.useQuery() as { data: BasicTeam[] | undefined, isLoading: boolean };
@@ -44,6 +49,7 @@ export function TeamManagement() {
     { role: selectedRole, searchQuery },
     { enabled: !!selectedTeamId }
   ) as { data: BasicUser[] | undefined, isLoading: boolean };
+  const { data: availableTags = [], isLoading: loadingTags } = trpc.ticket.getAllTags.useQuery();
 
   const createTeam = trpc.team.create.useMutation({
     onSuccess: () => {
@@ -78,6 +84,73 @@ export function TeamManagement() {
     }
   });
 
+  const addTags = trpc.team.addTags.useMutation({
+    onMutate: async ({ teamId, tags }) => {
+      // Cancel outgoing refetches
+      await utils.team.list.cancel();
+      
+      // Snapshot the previous value
+      const previousTeams = utils.team.list.getData();
+      
+      // Optimistically update the team
+      utils.team.list.setData(undefined, (old) => {
+        if (!old) return old;
+        return old.map(team => {
+          if (team.id === teamId) {
+            return {
+              ...team,
+              tags: [...new Set([...team.tags, ...tags])] // Ensure uniqueness
+            };
+          }
+          return team;
+        });
+      });
+
+      return { previousTeams };
+    },
+    onError: (err, variables, context) => {
+      // If the mutation fails, use the context we returned above
+      if (context?.previousTeams) {
+        utils.team.list.setData(undefined, context.previousTeams);
+      }
+    },
+    onSettled: () => {
+      // Sync with server
+      utils.team.list.invalidate();
+    }
+  });
+
+  const removeTags = trpc.team.removeTags.useMutation({
+    onMutate: async ({ teamId, tags }) => {
+      await utils.team.list.cancel();
+      
+      const previousTeams = utils.team.list.getData();
+      
+      utils.team.list.setData(undefined, (old) => {
+        if (!old) return old;
+        return old.map(team => {
+          if (team.id === teamId) {
+            return {
+              ...team,
+              tags: team.tags.filter(t => !tags.includes(t))
+            };
+          }
+          return team;
+        });
+      });
+
+      return { previousTeams };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousTeams) {
+        utils.team.list.setData(undefined, context.previousTeams);
+      }
+    },
+    onSettled: () => {
+      utils.team.list.invalidate();
+    }
+  });
+
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teamName.trim()) return;
@@ -100,10 +173,77 @@ export function TeamManagement() {
     await deleteTeam.mutate({ teamId: selectedTeamId, password: deletePassword });
   };
 
+  const handleAddTag = async (tag: string) => {
+    if (!selectedTeamId) return;
+    
+    // Check if tag already exists in the selected team
+    const selectedTeam = teams?.find(t => t.id === selectedTeamId);
+    if (selectedTeam?.tags.includes(tag)) return;
+    
+    await addTags.mutate({ teamId: selectedTeamId, tags: [tag] });
+  };
+
+  const handleRemoveTag = async (tag: string) => {
+    if (!selectedTeamId) return;
+    await removeTags.mutate({ teamId: selectedTeamId, tags: [tag] });
+  };
+
   // Filter out current team members from eligible users
   const filteredEligibleUsers = eligibleUsers?.filter(user => 
     !teamMembers?.some(member => member.id === user.id)
   );
+
+  // Filter available tags based on input
+  const filteredTags = availableTags
+    .filter(tag => {
+      const selectedTeam = teams?.find(t => t.id === selectedTeamId);
+      return tag.toLowerCase().includes(newTag.toLowerCase()) && 
+        (!selectedTeam || !selectedTeam.tags.includes(tag));
+    })
+    .slice(0, 5); // Limit to 5 suggestions
+
+  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Prevent form submission
+      if (newTag.trim()) {
+        handleAddTag(newTag.trim());
+        setNewTag("");
+        setShowTagSuggestions(false);
+      }
+    } else if (e.key === 'Escape') {
+      setShowTagSuggestions(false);
+    } else if (e.key === 'ArrowDown' && showTagSuggestions && filteredTags.length > 0) {
+      e.preventDefault();
+      const suggestionsList = document.querySelector('#tag-suggestions');
+      const firstSuggestion = suggestionsList?.querySelector('button');
+      (firstSuggestion as HTMLButtonElement)?.focus();
+    }
+  };
+
+  const handleTagSuggestionKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, tag: string) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleAddTag(tag);
+      setNewTag("");
+      setShowTagSuggestions(false);
+      tagInputRef.current?.focus();
+    } else if (e.key === 'Escape') {
+      setShowTagSuggestions(false);
+      tagInputRef.current?.focus();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const nextSibling = e.currentTarget.nextElementSibling as HTMLButtonElement;
+      if (nextSibling) nextSibling.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prevSibling = e.currentTarget.previousElementSibling as HTMLButtonElement;
+      if (prevSibling) {
+        prevSibling.focus();
+      } else {
+        tagInputRef.current?.focus();
+      }
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -174,14 +314,82 @@ export function TeamManagement() {
                     <div className="space-y-6">
                       <div className="space-y-4">
                         <div className="flex justify-between items-center">
-                          <h3 className="font-medium text-foreground">Current Team Members</h3>
+                          <h3 className="font-medium text-foreground">Team Tags</h3>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {team.tags?.map((tag) => (
+                            <div 
+                              key={tag}
+                              className="flex items-center gap-1 px-2 py-1 bg-[#1E2D3D] rounded-full text-sm"
+                            >
+                              <span className="text-foreground">{tag}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 w-5 p-0 hover:bg-[#2E3D4D]"
+                                onClick={() => handleRemoveTag(tag)}
+                              >
+                                <span className="text-muted-foreground">×</span>
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <div className="relative flex-1">
+                            <Input
+                              ref={tagInputRef}
+                              value={newTag}
+                              onChange={(e) => {
+                                setNewTag(e.target.value);
+                                setShowTagSuggestions(true);
+                              }}
+                              onFocus={() => setShowTagSuggestions(true)}
+                              onKeyDown={handleTagKeyDown}
+                              placeholder="Add new tag"
+                              className="w-full bg-[#1E2D3D] border-[#1E2D3D] text-foreground"
+                            />
+                            {showTagSuggestions && filteredTags.length > 0 && (
+                              <div 
+                                id="tag-suggestions"
+                                className="absolute z-50 w-full mt-1 bg-[#1E2D3D] border border-[#2E3D4D] rounded-md shadow-lg overflow-hidden"
+                              >
+                                {filteredTags.map((tag) => (
+                                  <button
+                                    key={tag}
+                                    onClick={() => {
+                                      handleAddTag(tag);
+                                      setNewTag("");
+                                      setShowTagSuggestions(false);
+                                      tagInputRef.current?.focus();
+                                    }}
+                                    onKeyDown={(e) => handleTagSuggestionKeyDown(e, tag)}
+                                    className="w-full px-4 py-2 text-left text-foreground hover:bg-[#2E3D4D] focus:bg-[#2E3D4D] focus:outline-none"
+                                  >
+                                    {tag}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                           <Button 
-                            variant="destructive" 
-                            size="sm"
-                            onClick={() => setIsDeleteDialogOpen(true)}
+                            onClick={() => {
+                              if (newTag.trim()) {
+                                handleAddTag(newTag.trim());
+                                setNewTag("");
+                                setShowTagSuggestions(false);
+                              }
+                            }}
+                            disabled={!newTag.trim()}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
                           >
-                            Delete Team
+                            Add Tag
                           </Button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <h3 className="font-medium text-foreground">Current Team Members</h3>
                         </div>
                         {loadingMembers ? (
                           <div className="text-foreground">Loading members...</div>
@@ -256,6 +464,16 @@ export function TeamManagement() {
                             ))}
                           </div>
                         )}
+                      </div>
+
+                      <div className="pt-6 border-t border-[#1E2D3D]">
+                        <Button 
+                          variant="destructive" 
+                          onClick={() => setIsDeleteDialogOpen(true)}
+                          className="w-full"
+                        >
+                          Delete Team
+                        </Button>
                       </div>
                     </div>
                   </DialogContent>
