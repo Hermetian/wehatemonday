@@ -26,10 +26,10 @@ export default function CreateTicketPage() {
 
   return (
     <ProtectedRoute>
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-2xl mx-auto">
-          <h1 className="text-2xl font-bold mb-6">Create New Support Ticket</h1>
-          <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="min-h-screen bg-[#0A1A2F] text-white">
+        <div className="container mx-auto px-4 py-8">
+          <div className="max-w-2xl mx-auto">
+            <h1 className="text-2xl font-bold mb-6">Create New Support Ticket</h1>
             <CreateTicketForm />
           </div>
         </div>

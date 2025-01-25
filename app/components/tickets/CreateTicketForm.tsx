@@ -95,7 +95,7 @@ export const CreateTicketForm = () => {
   }
 
   return (
-    <div className="w-full max-w-2xl mx-auto bg-white rounded-lg border">
+    <div className="w-full max-w-2xl mx-auto bg-white rounded-lg shadow-md">
       <form onSubmit={handleSubmit} className="space-y-6 p-6">
         <div className="space-y-2">
           <Label htmlFor="title" className="text-sm font-medium text-gray-700">Title</Label>
@@ -125,7 +125,7 @@ export const CreateTicketForm = () => {
           </div>
           <div 
             className={cn(
-              "transition-all duration-200 ease-in-out rounded-lg border border-gray-300 overflow-hidden",
+              "transition-all duration-200 ease-in-out rounded-lg overflow-hidden bg-white",
               isEditorExpanded ? "h-[500px]" : "h-[200px]"
             )}
           >
@@ -136,7 +136,7 @@ export const CreateTicketForm = () => {
                 setDescriptionHtml(html);
               }}
               placeholder="Describe your issue..."
-              className="h-full bg-white text-gray-900"
+              className="h-full bg-white text-gray-900 rounded-lg border border-gray-300"
             />
           </div>
         </div>
@@ -179,7 +179,7 @@ export const CreateTicketForm = () => {
             type="button"
             variant="outline"
             onClick={() => router.push('/homepage')}
-            className="border-gray-300 text-gray-700 hover:bg-gray-50"
+            className="border-gray-300 text-gray-700 hover:bg-gray-100 hover:text-gray-900"
           >
             Cancel
           </Button>

@@ -12,6 +12,7 @@ import {
   TooltipTrigger,
 } from "@/app/components/ui/tooltip";
 import { RichTextEditor, RichTextContent } from '@/app/components/ui/rich-text-editor';
+import { Checkbox } from '@/app/components/ui/checkbox';
 
 interface TicketMessagesProps {
   ticketId: string;
@@ -110,12 +111,11 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex items-center space-x-2 bg-yellow-50 px-3 py-1.5 rounded-md w-fit hover:bg-yellow-100 transition-colors">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     id="internal"
                     checked={isInternal}
-                    onChange={(e) => setIsInternal(e.target.checked)}
-                    className="h-4 w-4 rounded border-yellow-500 text-yellow-600 focus:ring-yellow-500"
+                    onCheckedChange={(checked) => setIsInternal(checked as boolean)}
+                    className="border-yellow-500 data-[state=checked]:bg-yellow-600 data-[state=checked]:border-yellow-600"
                   />
                   <Label htmlFor="internal" className="text-sm font-medium text-yellow-800 cursor-pointer">
                     Mark as internal note

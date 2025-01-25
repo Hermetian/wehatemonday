@@ -124,33 +124,35 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
           {/* Ticket Details Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="title" className="text-gray-700">Title</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="title" className="text-gray-700">Title</Label>
+              </div>
               <Input
                 id="title"
                 value={title}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
                 disabled={!canEditAll}
-                className="bg-white border-gray-200"
+                className="bg-white border-gray-200 text-gray-900"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description" className="text-gray-700">Description</Label>
-              <div className="mt-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium text-gray-900">Description</h3>
-                  {canEditAll && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setIsEditing(!isEditing)}
-                    >
-                      {isEditing ? 'Cancel' : 'Edit'}
-                    </Button>
-                  )}
-                </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="description" className="text-gray-700">Description</Label>
+                {canEditAll && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsEditing(!isEditing)}
+                    className="text-gray-700 hover:text-gray-900 hover:bg-gray-100 border-gray-300"
+                  >
+                    {isEditing ? 'Cancel' : 'Edit'}
+                  </Button>
+                )}
+              </div>
+              <div>
                 {isEditing ? (
-                  <div className="mt-2 space-y-4">
+                  <div className="space-y-4">
                     <RichTextEditor
                       content={description}
                       onChange={(html) => {
@@ -158,28 +160,11 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                         setDescriptionHtml(html);
                       }}
                       placeholder="Edit description..."
+                      className="min-h-[300px] rounded-lg border border-gray-200 text-gray-900 [&_.tiptap]:text-gray-900 [&_select]:text-gray-900"
                     />
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setIsEditing(false);
-                          setDescription(ticket.description);
-                          setDescriptionHtml(ticket.descriptionHtml);
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="submit"
-                        disabled={updateMutation.isLoading}
-                      >
-                        {updateMutation.isLoading ? 'Saving...' : 'Save'}
-                      </Button>
-                    </div>
                   </div>
                 ) : (
-                  <div className="mt-2 prose prose-sm max-w-none">
+                  <div className="prose prose-sm max-w-none bg-gray-50 rounded-lg p-4 border border-gray-200 text-gray-900">
                     <RichTextContent content={ticket.descriptionHtml || ticket.description} />
                   </div>
                 )}
@@ -188,16 +173,16 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
 
             {canEditAll && (
               <>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="status" className="text-gray-700">Status</Label>
                     <Select value={status} onValueChange={(value: TicketStatus) => setStatus(value)}>
-                      <SelectTrigger className="bg-white border-gray-200">
+                      <SelectTrigger className="bg-white border-gray-200 text-gray-900">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {Object.values(TicketStatus).map((s) => (
-                          <SelectItem key={s} value={s}>
+                          <SelectItem key={s} value={s} className="text-gray-900">
                             <div className="flex items-center gap-2">
                               <StatusBadge status={s}>{s}</StatusBadge>
                             </div>
@@ -210,12 +195,12 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                   <div className="space-y-2">
                     <Label htmlFor="priority" className="text-gray-700">Priority</Label>
                     <Select value={priority} onValueChange={(value: TicketPriority) => setPriority(value)}>
-                      <SelectTrigger className="bg-white border-gray-200">
+                      <SelectTrigger className="bg-white border-gray-200 text-gray-900">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {Object.values(TicketPriority).map((p) => (
-                          <SelectItem key={p} value={p}>
+                          <SelectItem key={p} value={p} className="text-gray-900">
                             <div className="flex items-center gap-2">
                               <StatusBadge priority={p}>{p}</StatusBadge>
                             </div>
@@ -226,22 +211,11 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <Label className="text-gray-700">Tags</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={newTag}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewTag(e.target.value)}
-                      placeholder="Add a tag"
-                      className="bg-white border-gray-200"
-                    />
-                    <Button type="button" onClick={handleAddTag} variant="secondary">
-                      Add
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-2 mt-2">
+                  <div className="flex flex-wrap gap-2 p-2 bg-gray-50 rounded-lg border border-gray-200 min-h-[44px]">
                     {tags.map((tag: string) => (
-                      <Badge key={tag} variant="secondary" className="bg-gray-100 text-gray-800 gap-1">
+                      <Badge key={tag} variant="secondary" className="bg-white text-gray-800 gap-1 border border-gray-200">
                         {tag}
                         <button
                           type="button"
@@ -252,6 +226,22 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                         </button>
                       </Badge>
                     ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={newTag}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewTag(e.target.value)}
+                      placeholder="Add a tag"
+                      className="bg-white border-gray-200 text-gray-900"
+                    />
+                    <Button 
+                      type="button" 
+                      onClick={handleAddTag} 
+                      variant="outline"
+                      className="text-gray-700 hover:text-gray-900 hover:bg-gray-100 border-gray-300"
+                    >
+                      Add
+                    </Button>
                   </div>
                 </div>
               </>
@@ -264,13 +254,13 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                   value={assignedToId || 'unassigned'}
                   onValueChange={(value) => setAssignedToId(value === 'unassigned' ? null : value)}
                 >
-                  <SelectTrigger className="bg-white border-gray-200">
+                  <SelectTrigger className="bg-white border-gray-200 text-gray-900">
                     <SelectValue placeholder="Unassigned" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    <SelectItem value="unassigned" className="text-gray-900">Unassigned</SelectItem>
                     {staffUsers.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
+                      <SelectItem key={user.id} value={user.id} className="text-gray-900">
                         <div className="flex items-center gap-2">
                           {user.name || user.email}
                           <StatusBadge role={user.role}>{user.role}</StatusBadge>
@@ -283,15 +273,23 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
             )}
 
             <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-              <div className="flex gap-2">
-                <StatusBadge status={status}>{status}</StatusBadge>
-                <StatusBadge priority={priority}>{priority}</StatusBadge>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">Status:</span>
+                  <StatusBadge status={status}>{status}</StatusBadge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">Priority:</span>
+                  <StatusBadge priority={priority}>{priority}</StatusBadge>
+                </div>
               </div>
               <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="text-gray-700 hover:text-gray-900 hover:bg-gray-100 border-gray-300">
                   Cancel
                 </Button>
-                <Button type="submit">Save Changes</Button>
+                <Button type="submit" variant="default" className="bg-blue-600 hover:bg-blue-700 text-white">
+                  Save Changes
+                </Button>
               </div>
             </div>
           </form>
@@ -299,7 +297,9 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
           {/* Messages Section */}
           <div className="border-t border-gray-200 pt-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Messages</h3>
-            <TicketMessages ticketId={ticket.id} />
+            <div className="text-gray-900">
+              <TicketMessages ticketId={ticket.id} />
+            </div>
           </div>
         </div>
       </DialogContent>
