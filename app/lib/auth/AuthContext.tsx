@@ -23,18 +23,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initialized, setInitialized] = useState(false);
 
   const updateAuthState = useCallback(async (session: Session | null) => {
-    if (!session?.user) {
-      setUser(null);
-      setRole(null);
-      setAccessToken(null);
-      setLoading(false);
-      return;
-    }
+    try {
+      if (!session?.user) {
+        setUser(null);
+        setRole(null);
+        setAccessToken(null);
+        return;
+      }
 
-    setUser(session.user);
-    setAccessToken(session.access_token);
-    
-    if (!role) {
+      setUser(session.user);
+      setAccessToken(session.access_token);
+      
       try {
         const response = await fetch('/api/auth', {
           method: 'POST',
@@ -51,16 +50,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (response.ok) {
           const data = await response.json();
           setRole(data.role);
+        } else {
+          console.warn('Failed to fetch role:', await response.text());
+          setRole(null);
         }
       } catch (error) {
         console.error('Error fetching role:', error);
+        setRole(null);
       }
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
-  }, [role]);
+  }, []);
 
   const refreshSession = useCallback(async () => {
+    setLoading(true);
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error) throw error;
@@ -70,11 +74,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setRole(null);
       setAccessToken(null);
+    } finally {
       setLoading(false);
     }
   }, [updateAuthState]);
 
-  // Initial session check - runs once and when updateAuthState changes
+  // Initial session check
   useEffect(() => {
     let mounted = true;
 
@@ -99,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { mounted = false; };
   }, [updateAuthState]);
 
-  // Auth state change listener - only set up once after initialization
+  // Auth state change listener
   useEffect(() => {
     if (!initialized) return;
 
@@ -112,22 +117,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [initialized, updateAuthState]); // Only depend on initialized and updateAuthState
-
-  // Force loading to false after a timeout
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (loading) {
-        setLoading(false);
-      }
-    }, 5000);
-
-    return () => clearTimeout(timeout);
-  }, [loading]);
+  }, [initialized, updateAuthState]);
 
   const signIn = async (email: string, password: string): Promise<void> => {
+    setLoading(true);
     try {
-      // First authenticate with Supabase
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email, 
         password 
@@ -136,7 +130,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
       
       if (data.session) {
-        // Then update our local state
         await updateAuthState(data.session);
       } else {
         throw new Error('No session after sign in');
@@ -148,8 +141,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, role: UserRole): Promise<void> => {
+    setLoading(true);
     try {
-      // First create the user in Supabase
       const { data, error } = await supabase.auth.signUp({ 
         email, 
         password,
@@ -161,7 +154,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('No session after sign up');
       }
 
-      // Then create the user in our database with role
       const response = await fetch('/api/auth', {
         method: 'POST',
         headers: { 
@@ -179,7 +171,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Failed to create user in database');
       }
 
-      // Finally update our local state
       await updateAuthState(data.session);
     } catch (error) {
       console.error('Error signing up:', error);
@@ -188,25 +179,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async (): Promise<void> => {
+    setLoading(true);
     try {
-      // First clear all local state
       setUser(null);
       setRole(null);
       setAccessToken(null);
       
-      // Then sign out from Supabase
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
 
-      // Clear any cached data or local storage
       localStorage.clear();
       sessionStorage.clear();
       
-      // Force a session check to ensure we're signed out
       await supabase.auth.getSession();
     } catch (error) {
       console.error('Error in signOut:', error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 

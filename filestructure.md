@@ -100,12 +100,9 @@
 ├── postcss.config.mjs
 ├── prisma
 │   ├── migrations
-│   │   ├── 20250121024911_updating_by_prisma_1
-│   │   │   └── migration.sql
-│   │   ├── 20250122041244_add_audit_logs
-│   │   │   └── migration.sql
-│   │   ├── 20250124014903_add_test_user_fields
-│   │   │   └── migration.sql
+│   │   ├── 0_init
+│   │   │   ├── migration.sql
+│   │   │   └── migration.toml
 │   │   └── migration_lock.toml
 │   └── schema.prisma
 ├── public

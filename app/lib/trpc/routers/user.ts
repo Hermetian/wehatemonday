@@ -1,12 +1,16 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../trpc";
+import { router, protectedProcedure, publicProcedure } from "../trpc";
 import { createAuditLog } from "@/app/lib/utils/audit-logger";
 import { UserRole, Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 
 export const userRouter = router({
-  getProfile: protectedProcedure
+  getProfile: publicProcedure
     .query(async ({ ctx }) => {
+      if (!ctx.user) {
+        return null;
+      }
+
       const userId = ctx.user.id;
       const user = await ctx.prisma.user.findUnique({
         where: { id: userId },
@@ -18,7 +22,7 @@ export const userRouter = router({
       });
 
       if (!user) {
-        throw new Error("User not found");
+        return null;
       }
 
       return user;

@@ -13,6 +13,7 @@ interface CreateTeamFormProps {
 
 export function CreateTeamForm({ onSuccess }: CreateTeamFormProps) {
   const [teamName, setTeamName] = useState("");
+  const [initialTag, setInitialTag] = useState("");
   const router = useRouter();
   
   const createTeam = trpc.team.create.useMutation({
@@ -26,7 +27,10 @@ export function CreateTeamForm({ onSuccess }: CreateTeamFormProps) {
     e.preventDefault();
     if (!teamName.trim()) return;
     
-    await createTeam.mutate({ name: teamName });
+    await createTeam.mutate({ 
+      name: teamName,
+      tags: initialTag.trim() ? [initialTag.trim()] : []
+    });
   };
 
   return (
@@ -39,6 +43,15 @@ export function CreateTeamForm({ onSuccess }: CreateTeamFormProps) {
           onChange={(e) => setTeamName(e.target.value)}
           placeholder="Enter team name"
           required
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="initialTag">Initial Tag (Optional)</Label>
+        <Input
+          id="initialTag"
+          value={initialTag}
+          onChange={(e) => setInitialTag(e.target.value)}
+          placeholder="Enter initial tag"
         />
       </div>
       <Button 
