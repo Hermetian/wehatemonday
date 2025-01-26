@@ -34,7 +34,35 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  await supabase.auth.getSession()
+  const { data: { session } } = await supabase.auth.getSession()
+
+  // If this is a TRPC request and we have a session, add the auth token
+  if (request.nextUrl.pathname.startsWith('/api/trpc') && session?.access_token) {
+    // Clone the headers to make them mutable
+    const headers = new Headers(request.headers)
+    headers.set('authorization', `Bearer ${session.access_token}`)
+
+    // Create a new request with the updated headers
+    const newRequest = new Request(request.url, {
+      method: request.method,
+      headers,
+      body: request.body,
+      cache: request.cache,
+      credentials: request.credentials,
+      integrity: request.integrity,
+      keepalive: request.keepalive,
+      mode: request.mode,
+      redirect: request.redirect,
+      referrer: request.referrer,
+      referrerPolicy: request.referrerPolicy,
+      signal: request.signal,
+    })
+
+    // Update the response with the new request
+    response = NextResponse.next({
+      request: newRequest,
+    })
+  }
 
   return response
 }
@@ -50,4 +78,4 @@ export const config = {
      */
     '/((?!_next/static|_next/image|favicon.ico|public/).*)',
   ],
-} 
+}

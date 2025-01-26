@@ -1,16 +1,24 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/app/prisma';
-import { cleanupExpiredTestData } from '@/app/lib/utils/test-data-cleanup';
+import { createClient } from '@supabase/supabase-js';
+import { cleanupExpiredTestData } from '@/lib/utils/test-data-cleanup';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export async function POST() {
   try {
-    const result = await cleanupExpiredTestData(prisma);
-    return NextResponse.json(result);
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const result = await cleanupExpiredTestData(supabase);
+
+    return NextResponse.json({
+      success: true,
+      ...result,
+    });
   } catch (error) {
-    console.error('Cleanup endpoint error:', error);
+    console.error('Failed to cleanup test data:', error);
     return NextResponse.json(
-      { error: 'Failed to cleanup test data' },
+      { success: false, error: 'Failed to cleanup test data' },
       { status: 500 }
     );
   }
-} 
+}

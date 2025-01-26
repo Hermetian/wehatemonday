@@ -1,14 +1,16 @@
-import { UserRole, PrismaClient, Prisma } from '@prisma/client';
+import { UserClade } from '@/lib/supabase/types';
 import { v4 as uuidv4 } from 'uuid';
 import { WeightedItem, selectWeighted } from './test-data-generator';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { TicketStatus, TicketPriority } from '../../types/tickets';
 
 export interface TestTicketConfig {
   ticketCount?: number;
-  originatingRole?: WeightedItem<UserRole>[];
-  assignedRole?: WeightedItem<UserRole>[];
+  originatingClade?: WeightedItem<UserClade>[];
+  assignedClade?: WeightedItem<UserClade>[];
   testBatchId?: string;
-  status?: WeightedItem<string>[];
-  priority?: WeightedItem<string>[];
+  status?: WeightedItem<TicketStatus>[];
+  priority?: WeightedItem<TicketPriority>[];
   tags?: WeightedItem<string>[][];
   creationTime?: Date;
   duration?: number;
@@ -17,8 +19,8 @@ export interface TestTicketConfig {
 interface TestTicketMetadata {
   isTest: boolean;
   batchId: string;
-  originatingRole: string;
-  assignedRole: string;
+  originatingClade: UserClade;
+  assignedClade: UserClade;
 }
 
 const DEFAULT_TITLES = [
@@ -47,52 +49,55 @@ const DEFAULT_DESCRIPTIONS = [
   "Update process failed to complete"
 ];
 
-async function findTestUser(prisma: PrismaClient, role: UserRole, batchId?: string): Promise<string> {
+async function findTestUser(supabase: SupabaseClient, clade: UserClade, batchId?: string): Promise<string> {
   // First try to find a user with the exact batch ID
   if (batchId) {
-    const exactUser = await prisma.user.findFirst({
-      where: {
-        role,
-        testBatchId: batchId
-      },
-      select: { id: true }
-    });
-    if (exactUser) return exactUser.id;
+    const { data: exactUser, error: exactError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('clade', clade)
+      .eq('test_batch_id', batchId)
+      .single();
+
+    if (!exactError && exactUser) {
+      return exactUser.id;
+    }
   }
 
-  // Then try to find any test user with the correct role
-  const testUser = await prisma.user.findFirst({
-    where: {
-      role,
-      testBatchId: { not: null }
-    },
-    select: { id: true }
-  });
-  if (testUser) return testUser.id;
+  // Then try to find any test user with the correct clade
+  const { data: testUser, error: testError } = await supabase
+    .from('users')
+    .select('id')
+    .eq('clade', clade)
+    .not('test_batch_id', 'is', null)
+    .single();
+
+  if (!testError && testUser) {
+    return testUser.id;
+  }
 
   // Finally, try to find any test user
-  const anyTestUser = await prisma.user.findFirst({
-    where: {
-      testBatchId: { not: null }
-    },
-    select: { id: true }
-  });
+  const { data: anyUser, error: anyError } = await supabase
+    .from('users')
+    .select('id')
+    .not('test_batch_id', 'is', null)
+    .single();
 
-  if (!anyTestUser) {
-    throw new Error('No test users available');
+  if (!anyError && anyUser) {
+    return anyUser.id;
   }
 
-  return anyTestUser.id;
+  throw new Error('No test users available');
 }
 
-export async function generateTestTicketData(prisma: PrismaClient, config: TestTicketConfig) {
+export async function generateTestTicketData(supabase: SupabaseClient, config: TestTicketConfig) {
   const {
     ticketCount = 1,
-    originatingRole = [{ value: UserRole.CUSTOMER, weight: 1 }],
-    assignedRole = [{ value: UserRole.AGENT, weight: 1 }],
+    originatingClade = [{ value: UserClade.CUSTOMER, weight: 1 }],
+    assignedClade = [{ value: UserClade.AGENT, weight: 1 }],
     testBatchId,
-    status = [{ value: "OPEN", weight: 1 }],
-    priority = [{ value: "MEDIUM", weight: 1 }],
+    status = [{ value: TicketStatus.OPEN, weight: 1 }],
+    priority = [{ value: TicketPriority.MEDIUM, weight: 1 }],
     tags = [],
     creationTime = new Date(),
     duration = 24
@@ -103,42 +108,38 @@ export async function generateTestTicketData(prisma: PrismaClient, config: TestT
 
   const tickets = await Promise.all(
     Array.from({ length: ticketCount }, async (_, index) => {
-      const createdByRole = selectWeighted(originatingRole);
-      const assignedToRole = selectWeighted(assignedRole);
+      const createdByClade = selectWeighted(originatingClade);
+      const assignedToClade = selectWeighted(assignedClade);
 
-      const createdById = await findTestUser(prisma, createdByRole, testBatchId);
-      const assignedToId = await findTestUser(prisma, assignedToRole, testBatchId);
+      const createdById = await findTestUser(supabase, createdByClade, testBatchId);
+      const assignedToId = await findTestUser(supabase, assignedToClade, testBatchId);
 
-      const ticketData: Omit<Prisma.TicketUncheckedCreateInput, 'metadata'> = {
+      const ticketData = {
         title: `[TEST] ${DEFAULT_TITLES[index % DEFAULT_TITLES.length]}`,
         description: DEFAULT_DESCRIPTIONS[index % DEFAULT_DESCRIPTIONS.length],
         status: selectWeighted(status),
         priority: selectWeighted(priority),
-        createdById,
-        assignedToId,
-        customerId: createdById,
+        created_by: createdById,
+        assigned_to: assignedToId,
+        customer_id: createdById,
         tags: tags.map(tagGroup => 
           tagGroup.length ? selectWeighted(tagGroup) : null
         ).filter(Boolean) as string[],
-        testBatchId: batchId,
-        cleanupAt,
-        createdAt: creationTime,
-        updatedAt: creationTime
+        test_batch_id: batchId,
+        cleanup_at: cleanupAt,
+        created_at: creationTime,
+        updated_at: creationTime,
+        metadata: {
+          isTest: true,
+          batchId,
+          originatingClade: createdByClade,
+          assignedClade: assignedToClade
+        } satisfies TestTicketMetadata
       };
 
-      const metadata: Prisma.InputJsonValue = {
-        isTest: true,
-        batchId,
-        originatingRole: createdByRole as string,
-        assignedRole: assignedToRole as string
-      } satisfies TestTicketMetadata;
-
-      return {
-        ...ticketData,
-        metadata
-      };
+      return ticketData;
     })
   );
 
   return tickets;
-} 
+}

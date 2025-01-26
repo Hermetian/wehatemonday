@@ -5,18 +5,9 @@ declare global {
   var prisma: PrismaClient | undefined
 }
 
-const prismaClientSingleton = () => {
-  return new PrismaClient({
-    log: ['error', 'warn'],
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL
-      },
-    },
-  })
-}
-
-const prisma = global.prisma || prismaClientSingleton()
+const prisma = global.prisma || new PrismaClient({
+  log: ['error', 'warn'],
+})
 
 if (process.env.NODE_ENV !== 'production') {
   global.prisma = prisma

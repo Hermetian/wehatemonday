@@ -1,59 +1,54 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/app/prisma';
+import { createClient } from '@supabase/supabase-js';
 import { generateTestTicketData, TestTicketConfig } from '@/app/lib/utils/test-ticket-generator';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
-import { Prisma } from '@prisma/client';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export async function POST(request: Request) {
   try {
     const config: TestTicketConfig = await request.json();
-    const testTickets = await generateTestTicketData(prisma, config);
-    
-    const createdTickets = await prisma.$transaction(
-      testTickets.map(ticketData => {
-        const { metadata, testBatchId, ...rest } = ticketData;
-        return prisma.ticket.create({
-          data: {
-            ...rest,
-            metadata: metadata as Prisma.InputJsonValue,
-            testBatchId
-          },
-          include: {
-            createdBy: {
-              select: { id: true, name: true, email: true }
-            },
-            assignedTo: {
-              select: { id: true, name: true, email: true }
-            }
-          }
-        });
-      })
-    );
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Create audit logs for test tickets
+    // Generate test ticket data
+    const testTickets = await generateTestTicketData(supabase, config);
+
+    // Create tickets in Supabase
+    const { data: createdTickets, error } = await supabase
+      .from('tickets')
+      .insert(testTickets)
+      .select();
+
+    if (error) {
+      throw error;
+    }
+
+    // Create audit logs for each ticket
     await Promise.all(
       createdTickets.map(ticket =>
         createAuditLog({
+          supabase,
           action: 'CREATE',
           entity: 'TICKET',
           entityId: ticket.id,
-          userId: ticket.createdById,
+          userId: ticket.created_by,
           oldData: null,
           newData: { ...ticket, type: 'TEST_TICKET' },
-          prisma,
         })
       )
     );
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
+      count: createdTickets.length,
       tickets: createdTickets,
-      batchId: createdTickets[0].testBatchId 
+      batchId: createdTickets[0].test_batch_id
     });
   } catch (error) {
-    console.error('Test ticket creation error:', error);
+    console.error('Failed to create test tickets:', error);
     return NextResponse.json(
-      { error: 'Failed to create test tickets' },
+      { success: false, error: 'Failed to create test tickets' },
       { status: 500 }
     );
   }
@@ -62,52 +57,66 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const { batchId } = await request.json();
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Find all tickets in the batch
-    const ticketsToDelete = await prisma.ticket.findMany({
-      where: {
-        testBatchId: batchId
-      }
-    });
+    // Find test tickets to delete
+    const { data: ticketsToDelete, error: findError } = await supabase
+      .from('tickets')
+      .select('id')
+      .eq('test_batch_id', batchId);
 
-    // Delete all related data in a transaction
-    await prisma.$transaction(async (tx) => {
-      // Delete messages
-      await tx.message.deleteMany({
-        where: {
-          ticketId: {
-            in: ticketsToDelete.map(t => t.id)
-          }
-        }
+    if (findError) {
+      throw findError;
+    }
+
+    if (ticketsToDelete.length === 0) {
+      return NextResponse.json({
+        success: true,
+        count: 0,
       });
+    }
 
-      // Delete audit logs
-      await tx.auditLog.deleteMany({
-        where: {
-          entity: 'TICKET',
-          entityId: {
-            in: ticketsToDelete.map(t => t.id)
-          }
-        }
-      });
+    const ticketIds = ticketsToDelete.map(ticket => ticket.id);
 
-      // Delete tickets
-      await tx.ticket.deleteMany({
-        where: {
-          testBatchId: batchId
-        }
-      });
-    });
+    // Delete related messages first
+    const { error: messagesError } = await supabase
+      .from('messages')
+      .delete()
+      .in('ticket_id', ticketIds);
 
-    return NextResponse.json({ 
+    if (messagesError) {
+      throw messagesError;
+    }
+
+    // Delete audit logs
+    const { error: auditLogsError } = await supabase
+      .from('audit_logs')
+      .delete()
+      .in('entity_id', ticketIds);
+
+    if (auditLogsError) {
+      throw auditLogsError;
+    }
+
+    // Delete the tickets
+    const { error: deleteError } = await supabase
+      .from('tickets')
+      .delete()
+      .in('id', ticketIds);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    return NextResponse.json({
       success: true,
-      deletedCount: ticketsToDelete.length
+      count: ticketIds.length,
     });
   } catch (error) {
-    console.error('Test ticket deletion error:', error);
+    console.error('Failed to delete test tickets:', error);
     return NextResponse.json(
-      { error: 'Failed to delete test tickets' },
+      { success: false, error: 'Failed to delete test tickets' },
       { status: 500 }
     );
   }
-} 
+}

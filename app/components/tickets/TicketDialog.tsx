@@ -19,7 +19,7 @@ import { Badge } from '@/app/components/ui/badge';
 import { X } from 'lucide-react';
 import { useAuth } from '@/app/lib/auth/AuthContext';
 import { trpc } from '@/app/lib/trpc/client';
-import { UserRole } from '@prisma/client';
+import { UserClade } from '@/lib/supabase/types';
 import { TicketStatus, TicketPriority } from '@/app/types/tickets';
 import { TicketMessages } from './TicketMessages';
 import { StatusBadge } from '@/app/components/ui/status-badge';
@@ -35,8 +35,8 @@ interface TicketDialogProps {
   onTicketUpdated: () => void;
 }
 
-const STAFF_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT] as const;
-const ASSIGNMENT_ROLES = [UserRole.ADMIN, UserRole.MANAGER] as const;
+const STAFF_CLADES = [UserClade.ADMIN, UserClade.MANAGER, UserClade.AGENT] as const;
+const ASSIGNMENT_CLADES = [UserClade.ADMIN, UserClade.MANAGER] as const;
 
 type UpdateTicketInput = inferRouterInputs<AppRouter>['ticket']['update'];
 
@@ -46,7 +46,7 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
   onOpenChange,
   onTicketUpdated,
 }) => {
-  const { role } = useAuth();
+  const { clade } = useAuth();
   const utils = trpc.useContext();
   
   // Form state
@@ -64,7 +64,7 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
   const { data: assignableUsers } = trpc.ticket.getAssignableUsers.useQuery(
     { ticketId: ticket.id },
     {
-      enabled: role ? ASSIGNMENT_ROLES.includes(role as typeof ASSIGNMENT_ROLES[number]) : false,
+      enabled: clade ? ASSIGNMENT_CLADES.includes(clade as typeof ASSIGNMENT_CLADES[number]) : false,
     }
   );
 
@@ -76,8 +76,8 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
     },
   });
 
-  const canEditAll = role && STAFF_ROLES.includes(role as typeof STAFF_ROLES[number]);
-  const canAssign = role && ASSIGNMENT_ROLES.includes(role as typeof ASSIGNMENT_ROLES[number]);
+  const canEditAll = clade && STAFF_CLADES.includes(clade as typeof STAFF_CLADES[number]);
+  const canAssign = clade && ASSIGNMENT_CLADES.includes(clade as typeof ASSIGNMENT_CLADES[number]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -268,8 +268,8 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                       <SelectItem key={user.id} value={user.id} className="text-gray-900 hover:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900">
                         <div className="flex items-center gap-2">
                           <span>{user.name || user.email}</span>
-                          <StatusBadge role={user.isCustomer ? UserRole.CUSTOMER : user.role}>
-                            {user.isCustomer ? 'CUSTOMER' : user.role}
+                          <StatusBadge clade={user.clade}>
+                            {user.clade}
                           </StatusBadge>
                         </div>
                       </SelectItem>

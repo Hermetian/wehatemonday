@@ -1,17 +1,20 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/lib/auth/AuthContext';
+import { UserClade } from '@/lib/supabase/types';
 import { TicketList } from '@/app/components/tickets/TicketList';
 import Terminal from '@/app/components/common/Terminal';
-import { UserRole } from '@prisma/client';
 import { UserSettings } from '@/app/components/auth/UserSettings';
 import { TeamManagement } from '@/app/components/teams/TeamManagement';
+import { Skeleton } from '@/app/components/ui/skeleton';
+import { Button } from '@/app/components/ui/button';
+import Link from 'next/link';
 
 const Homepage = () => {
   const router = useRouter();
-  const { user, role } = useAuth();
+  const { user, clade } = useAuth();
 
   useEffect(() => {
     if (!user) {
@@ -23,12 +26,12 @@ const Homepage = () => {
     return null;
   }
 
-  const isManager = role === UserRole.MANAGER || role === UserRole.ADMIN;
-  const canCreateTickets = role === UserRole.CUSTOMER || role === UserRole.AGENT || role === UserRole.MANAGER;
+  const isManager = clade === UserClade.MANAGER || clade === UserClade.ADMIN;
+  const canCreateTickets = clade === UserClade.CUSTOMER || clade === UserClade.AGENT || clade === UserClade.MANAGER;
 
   // For debugging
   console.log('Current user:', user);
-  console.log('Current role:', role);
+  console.log('Current clade:', clade);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -42,10 +45,10 @@ const Homepage = () => {
         </div>
 
         {/* Admin Console */}
-        {role === UserRole.ADMIN && (
+        {clade === UserClade.ADMIN && (
           <div className="mb-8 bg-gray-800 p-6 rounded-lg">
             <h2 className="text-xl font-semibold mb-4">Admin Console</h2>
-            <Terminal userRole={role} />
+            <Terminal userClade={clade} />
           </div>
         )}
 
@@ -61,21 +64,20 @@ const Homepage = () => {
         <div className="mb-8 bg-gray-800 p-6 rounded-lg">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">
-              {role === UserRole.CUSTOMER ? 'Your Tickets' : 'All Tickets'}
+              {clade === UserClade.CUSTOMER ? 'Your Tickets' : 'All Tickets'}
             </h2>
             {canCreateTickets && (
-              <button
-                onClick={() => router.push('/tickets/create')}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md transition-colors"
-              >
-                Create New Ticket
-              </button>
+              <Link href="/tickets/create" passHref>
+                <Button>Create Ticket</Button>
+              </Link>
             )}
           </div>
           
           {/* Ticket List */}
-          {(role === UserRole.ADMIN || role === UserRole.MANAGER || role === UserRole.AGENT) && <TicketList />}
-          {role === UserRole.CUSTOMER && <TicketList filterByUser={user?.id} />}
+          <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+            {(clade === UserClade.ADMIN || clade === UserClade.MANAGER || clade === UserClade.AGENT) && <TicketList />}
+            {clade === UserClade.CUSTOMER && <TicketList filterByUser={user?.id} />}
+          </Suspense>
         </div>
       </div>
     </div>

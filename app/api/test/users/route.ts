@@ -1,46 +1,54 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/app/prisma';
+import { createClient } from '@supabase/supabase-js';
 import { generateTestUserData, TestUserConfig } from '@/app/lib/utils/test-data-generator';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
-import { Prisma } from '@prisma/client';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export async function POST(request: Request) {
   try {
     const config: TestUserConfig = await request.json();
-    const testUsers = generateTestUserData(config);
-    
-    const createdUsers = await prisma.$transaction(
-      testUsers.map(userData => 
-        prisma.user.create({
-          data: userData as Prisma.UserCreateInput
-        })
-      )
-    );
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Create audit logs for test users
+    // Generate test user data
+    const testUsers = generateTestUserData(config);
+
+    // Create users in Supabase
+    const { data: createdUsers, error } = await supabase
+      .from('users')
+      .insert(testUsers)
+      .select();
+
+    if (error) {
+      throw error;
+    }
+
+    // Create audit logs for each user
     await Promise.all(
       createdUsers.map(user =>
         createAuditLog({
+          supabase,
           action: 'CREATE',
           entity: 'USER',
           entityId: user.id,
           userId: user.id,
           oldData: null,
           newData: { ...user, type: 'TEST_USER' },
-          prisma,
         })
       )
     );
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
+      count: createdUsers.length,
       users: createdUsers,
-      batchId: testUsers[0].testBatchId 
+      batchId: testUsers[0].testBatchId
     });
   } catch (error) {
-    console.error('Test user creation error:', error);
+    console.error('Failed to create test users:', error);
     return NextResponse.json(
-      { error: 'Failed to create test users' },
+      { success: false, error: 'Failed to create test users' },
       { status: 500 }
     );
   }
@@ -48,65 +56,76 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Find test users to delete
     const { batchId } = await request.json();
 
-    // Find all users in the batch
-    const usersToDelete = await prisma.user.findMany({
-      where: {
-        testBatchId: batchId
-      } as Prisma.UserWhereInput
-    });
+    const { data: usersToDelete, error: findError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('test_batch_id', batchId);
 
-    // Delete all related data in a transaction
-    await prisma.$transaction(async (tx) => {
-      // Delete audit logs
-      await tx.auditLog.deleteMany({
-        where: {
-          userId: {
-            in: usersToDelete.map(u => u.id)
-          }
-        }
+    if (findError) {
+      throw findError;
+    }
+
+    if (usersToDelete.length === 0) {
+      return NextResponse.json({
+        success: true,
+        count: 0,
       });
+    }
 
-      // Delete messages
-      await tx.message.deleteMany({
-        where: {
-          ticket: {
-            OR: [
-              { createdById: { in: usersToDelete.map(u => u.id) } },
-              { assignedToId: { in: usersToDelete.map(u => u.id) } }
-            ]
-          }
-        }
-      });
+    const userIds = usersToDelete.map(user => user.id);
 
-      // Delete tickets
-      await tx.ticket.deleteMany({
-        where: {
-          OR: [
-            { createdById: { in: usersToDelete.map(u => u.id) } },
-            { assignedToId: { in: usersToDelete.map(u => u.id) } }
-          ]
-        }
-      });
+    // Delete related data first
+    const { error: ticketsError } = await supabase
+      .from('tickets')
+      .delete()
+      .in('customer_id', userIds);
 
-      // Delete users
-      await tx.user.deleteMany({
-        where: {
-          testBatchId: batchId
-        } as Prisma.UserWhereInput
-      });
-    });
+    if (ticketsError) {
+      throw ticketsError;
+    }
 
-    return NextResponse.json({ 
+    const { error: messagesError } = await supabase
+      .from('messages')
+      .delete()
+      .in('user_id', userIds);
+
+    if (messagesError) {
+      throw messagesError;
+    }
+
+    const { error: teamError } = await supabase
+      .from('team_members')
+      .delete()
+      .in('user_id', userIds);
+
+    if (teamError) {
+      throw teamError;
+    }
+
+    // Finally delete the users
+    const { error: deleteError } = await supabase
+      .from('users')
+      .delete()
+      .in('id', userIds);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    return NextResponse.json({
       success: true,
-      deletedCount: usersToDelete.length
+      count: userIds.length,
     });
   } catch (error) {
-    console.error('Test user deletion error:', error);
+    console.error('Failed to delete test users:', error);
     return NextResponse.json(
-      { error: 'Failed to delete test users' },
+      { success: false, error: 'Failed to delete test users' },
       { status: 500 }
     );
   }
-} 
+}

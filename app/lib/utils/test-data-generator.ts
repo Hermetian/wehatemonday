@@ -1,5 +1,5 @@
-import { UserRole } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
+import { UserClade } from '@/lib/supabase/types';
 
 export interface WeightedItem<T> {
   value: T;
@@ -10,7 +10,7 @@ export interface TestUserConfig {
   userCount?: number;
   email?: WeightedItem<string>[];
   name?: WeightedItem<string>[];
-  role?: WeightedItem<UserRole>[];
+  clade?: WeightedItem<UserClade>[];
   creationTime?: Date;
   duration?: number;
   flags?: WeightedItem<string>[][];
@@ -51,7 +51,7 @@ export function generateTestUserData(config: TestUserConfig) {
     userCount = 1,
     email,
     name,
-    role,
+    clade,
     creationTime = new Date(),
     duration = 24,
     flags = []
@@ -74,7 +74,7 @@ export function generateTestUserData(config: TestUserConfig) {
     return {
       email: emailValue,
       name: name ? selectWeighted(name) : `Test User ${index + 1}`,
-      role: role ? selectWeighted(role) : UserRole.CUSTOMER,
+      clade: clade ? selectWeighted(clade) : UserClade.CUSTOMER,
       metadata: {
         isTest: true,
         batchId,

@@ -7,7 +7,7 @@ import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
 import { trpc } from "@/app/lib/trpc/client";
-import { UserRole } from "@prisma/client";
+import { UserClade } from '@/lib/supabase/types';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/app/components/ui/alert-dialog";
 
 // Simplified types to avoid deep type instantiation
@@ -15,7 +15,7 @@ type BasicUser = {
   id: string;
   name: string | null;
   email: string;
-  role: UserRole;
+  clade: UserClade;
 };
 
 type BasicTeam = {
@@ -28,7 +28,7 @@ type BasicTeam = {
 export function TeamManagement() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-  const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.AGENT);
+  const [selectedClade, setSelectedClade] = useState<UserClade>(UserClade.AGENT);
   const [searchQuery, setSearchQuery] = useState("");
   const [teamName, setTeamName] = useState("");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -44,8 +44,8 @@ export function TeamManagement() {
     { teamId: selectedTeamId! },
     { enabled: !!selectedTeamId }
   ) as { data: BasicUser[] | undefined, isLoading: boolean };
-  const { data: eligibleUsers, isLoading: loadingUsers } = trpc.user.listByRole.useQuery(
-    { role: selectedRole, searchQuery },
+  const { data: eligibleUsers, isLoading: loadingUsers } = trpc.user.listByClade.useQuery(
+    { clade: selectedClade, searchQuery },
     { enabled: !!selectedTeamId }
   ) as { data: BasicUser[] | undefined, isLoading: boolean };
   const { data: availableTags = [] } = trpc.ticket.getAllTags.useQuery();
@@ -417,15 +417,15 @@ export function TeamManagement() {
                       <div className="space-y-4">
                         <h3 className="font-medium text-foreground">Add Team Members</h3>
                         <div className="space-y-2">
-                          <Label className="text-foreground">Filter by Role</Label>
-                          <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as UserRole)}>
+                          <Label className="text-foreground">Filter by Clade</Label>
+                          <Select value={selectedClade} onValueChange={(value) => setSelectedClade(value as UserClade)}>
                             <SelectTrigger className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="bg-[#1E2D3D] border-[#1E2D3D]">
-                              <SelectItem value={UserRole.ADMIN} className="text-foreground hover:bg-[#0A1A2F]">Admin</SelectItem>
-                              <SelectItem value={UserRole.MANAGER} className="text-foreground hover:bg-[#0A1A2F]">Manager</SelectItem>
-                              <SelectItem value={UserRole.AGENT} className="text-foreground hover:bg-[#0A1A2F]">Agent</SelectItem>
+                              {Object.values(UserClade).map((c) => (
+                                <SelectItem key={c} value={c}>{c}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>

@@ -35,12 +35,12 @@ import { trpc } from '@/app/lib/trpc/client';
 import type { TRPCClientErrorLike } from '@trpc/client';
 import type { AppRouter } from '@/app/lib/trpc/routers/_app';
 import { useRouter } from 'next/navigation';
-import { UserRole } from '@prisma/client';
+import { UserClade } from '@/lib/supabase/types';
 import { StatusBadge } from '@/app/components/ui/status-badge';
 
 export function UserSettings() {
   const router = useRouter();
-  const { user, role, refreshSession, signOut } = useAuth();
+  const { user, refreshSession, signOut } = useAuth();
   
   // Get user profile from Prisma
   const { data: userProfile } = trpc.user.getProfile.useQuery(undefined, {
@@ -53,8 +53,7 @@ export function UserSettings() {
   const [isCurrentPasswordIncorrect, setIsCurrentPasswordIncorrect] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.CUSTOMER);
-  const [pendingRole, setPendingRole] = useState<UserRole>(UserRole.CUSTOMER);
+  const [pendingClade, setPendingClade] = useState<UserClade>(UserClade.CUSTOMER);
   const [currentPassword, setCurrentPassword] = useState('');
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -70,9 +69,9 @@ export function UserSettings() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
-      setPendingRole(currentRole);
+      setPendingClade(userProfile?.clade || UserClade.CUSTOMER);
     }
-  }, [isSettingsOpen, currentRole]);
+  }, [isSettingsOpen, userProfile?.clade]);
 
   // Track email changes
   useEffect(() => {
@@ -84,16 +83,9 @@ export function UserSettings() {
     if (user && userProfile) {
       setName(userProfile.name || ''); // Use Prisma data for name
       setEmail(user.email || ''); // Use Supabase data for email
+      setPendingClade(userProfile.clade);
     }
   }, [user, userProfile]);
-
-  // Update role when auth context role changes
-  useEffect(() => {
-    if (role) {
-      setCurrentRole(role);
-      setPendingRole(role);
-    }
-  }, [role]);
 
   const updateProfile = trpc.user.updateProfile.useMutation({
     onError: (error: TRPCClientErrorLike<AppRouter>) => {
@@ -105,9 +97,9 @@ export function UserSettings() {
     }
   });
 
-  const updateRole = trpc.user.updateRole.useMutation({
+  const updateClade = trpc.user.updateClade.useMutation({
     onError: (error: TRPCClientErrorLike<AppRouter>) => {
-      toast.error(`Failed to update role: ${error.message}`);
+      toast.error(`Failed to update clade: ${error.message}`);
       setIsLoading(false);
     },
     onSuccess: () => {
@@ -182,15 +174,14 @@ export function UserSettings() {
         }
       }
 
-      // Update role if changed (Prisma only)
-      if (pendingRole !== currentRole) {
+      // Update clade if changed (Prisma only)
+      if (pendingClade !== userProfile?.clade) {
         hasChanges = true;
         try {
-          await updateRole.mutateAsync({ role: pendingRole });
-          setCurrentRole(pendingRole);
+          await updateClade.mutateAsync({ clade: pendingClade });
         } catch (error: unknown) {
-          console.error('Role update error:', error);
-          toast.error('Failed to update role');
+          console.error('Clade update error:', error);
+          toast.error('Failed to update clade');
           setIsLoading(false);
           return;
         }
@@ -249,7 +240,7 @@ export function UserSettings() {
       if (user) {
         setEmail(user.email || '');
       }
-      setPendingRole(currentRole);
+      setPendingClade(userProfile?.clade || UserClade.CUSTOMER);
       setShowPasswordChange(false);
       setNewPassword('');
       setConfirmNewPassword('');
@@ -318,16 +309,16 @@ export function UserSettings() {
                 )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="role" className="text-foreground">Role</Label>
-                <Select value={pendingRole} onValueChange={(value: UserRole) => setPendingRole(value)}>
+                <Label htmlFor="clade" className="text-foreground">Clade</Label>
+                <Select value={pendingClade} onValueChange={(value: UserClade) => setPendingClade(value)}>
                   <SelectTrigger className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-[#1E2D3D] border-[#1E2D3D]">
-                    {Object.values(UserRole).map((r) => (
-                      <SelectItem key={r} value={r} className="text-foreground hover:bg-[#0A1A2F]">
+                    {Object.values(UserClade).map((c) => (
+                      <SelectItem key={c} value={c} className="text-foreground hover:bg-[#0A1A2F]">
                         <div className="flex items-center gap-2">
-                          <StatusBadge role={r}>{r}</StatusBadge>
+                          <StatusBadge clade={c}>{c}</StatusBadge>
                         </div>
                       </SelectItem>
                     ))}

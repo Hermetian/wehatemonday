@@ -2,29 +2,41 @@ import { router, protectedProcedure } from '@/app/lib/trpc/trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { TicketStatus, TicketPriority } from '@/app/types/tickets';
-import { UserRole, Ticket } from '@prisma/client';
-import { createAuditLog } from '@/app/lib/utils/audit-logger';
-import { withCache, CACHE_KEYS } from '@/app/lib/utils/cache';
-import { invalidateTicketCache, invalidateTicketDetail } from '@/app/lib/utils/cache-helpers';
+import { UserClade } from '@/lib/supabase/types';
 
-const STAFF_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT] as const;
-const ASSIGNMENT_ROLES = [UserRole.ADMIN, UserRole.MANAGER] as const;
+const STAFF_CLADES = [UserClade.ADMIN, UserClade.MANAGER, UserClade.AGENT] as const;
+const ASSIGNMENT_CLADES = [UserClade.ADMIN, UserClade.MANAGER] as const;
 
-// Define the return type for tickets
-interface TicketWithRelations extends Ticket {
-  createdBy: {
+interface TicketWithRelations {
+  id: string;
+  title: string;
+  description: string;
+  description_html: string;
+  status: string;
+  priority: string;
+  customer_id: string;
+  assigned_to_id: string | null;
+  created_by_id: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+  cleanup_at: string | null;
+  test_batch_id: string | null;
+  metadata: Record<string, unknown>;
+  last_updated_by_id: string | null;
+  created_by: {
     name: string | null;
     email: string | null;
   };
-  assignedTo: {
+  assigned_to: {
     name: string | null;
     email: string | null;
   } | null;
-  lastUpdatedBy: {
+  last_updated_by: {
     name: string | null;
     email: string | null;
   };
-  messageCount: number;
+  message_count: number;
 }
 
 export const ticketRouter = router({
@@ -49,29 +61,43 @@ export const ticketRouter = router({
           });
         }
 
-        const ticket = await ctx.prisma.ticket.create({
-          data: {
-            ...input,
+        // Create ticket
+        const { data: ticket, error: ticketError } = await ctx.supabase
+          .from('tickets')
+          .insert({
+            title: input.title,
+            description: input.description,
+            description_html: input.descriptionHtml,
             status: TicketStatus.OPEN,
-            createdBy: {
-              connect: { id: input.createdBy },
-            },
-          },
-        });
+            priority: input.priority,
+            customer_id: input.customerId,
+            created_by_id: input.createdBy,
+          })
+          .select()
+          .single();
+
+        if (ticketError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: ticketError.message,
+          });
+        }
 
         // Create audit log
-        await createAuditLog({
-          action: 'CREATE',
-          entity: 'TICKET',
-          entityId: ticket.id,
-          userId: ctx.user.id,
-          oldData: null,
-          newData: ticket,
-          prisma: ctx.prisma,
-        });
+        const { error: auditError } = await ctx.supabase
+          .from('audit_logs')
+          .insert({
+            action: 'CREATE',
+            entity: 'TICKET',
+            entity_id: ticket.id,
+            user_id: ctx.user.id,
+            old_data: null,
+            new_data: ticket,
+          });
 
-        // Invalidate ticket list cache
-        invalidateTicketCache();
+        if (auditError) {
+          console.error('Failed to create audit log:', auditError);
+        }
 
         return ticket;
       } catch (error) {
@@ -99,235 +125,161 @@ export const ticketRouter = router({
           { field: 'priority', direction: 'desc' },
           { field: 'updatedAt', direction: 'desc' }
         ]),
-        tags: z.array(z.string()).optional(),
-        includeUntagged: z.boolean().optional().default(false),
       })
     )
-    .query(async ({ input, ctx }): Promise<{ tickets: TicketWithRelations[]; nextCursor?: string }> => {
-      return withCache(
-        CACHE_KEYS.TICKET_LIST,
-        { ...input, userId: ctx.user.id },
-        async () => {
-          try {
-            const limit = input.limit ?? 50;
-            const cursor = input.cursor;
+    .query(async ({ input, ctx }) => {
+      try {
+        const { user, supabase } = ctx;
 
-            // Get the user's role from the database
-            const user = await ctx.prisma.user.findUnique({
-              where: { id: ctx.user.id },
-              select: { role: true }
-            });
-
-            if (!user) {
-              throw new TRPCError({
-                code: 'NOT_FOUND',
-                message: 'User not found',
-              });
-            }
-
-            // Define the where clause based on user role and filters
-            const where = {
-              ...(user.role === UserRole.CUSTOMER
-                ? { customerId: ctx.user.id }
-                : user.role === UserRole.AGENT
-                ? {} // Agents can see all tickets
-                : user.role === UserRole.MANAGER
-                ? {} // Managers can see all tickets
-                : user.role === UserRole.ADMIN
-                ? {} // Admins can see all tickets
-                : { customerId: ctx.user.id }), // Default to only seeing own tickets
-              // Add filterByUser if provided and user has permission
-              ...(input.filterByUser && (user.role !== UserRole.CUSTOMER)
-                ? { customerId: input.filterByUser }
-                : {}),
-              // Hide completed tickets unless explicitly requested
-              ...(!input.showCompleted
-                ? {
-                    NOT: {
-                      status: {
-                        in: [TicketStatus.CLOSED, TicketStatus.RESOLVED],
-                      },
-                    },
-                  }
-                : {}),
-              // Handle tag filtering
-              ...(input.tags?.length || input.includeUntagged
-                ? {
-                    OR: [
-                      ...(input.tags?.length ? [{ tags: { hasSome: input.tags } }] : []),
-                      ...(input.includeUntagged ? [{ tags: { isEmpty: true } }] : []),
-                    ],
-                  }
-                : {}),
-            };
-
-            // Get tickets with sorting and includes
-            const ticketsWithAuditLogs = await ctx.prisma.ticket.findMany({
-              take: limit + 1,
-              cursor: cursor ? { id: cursor } : undefined,
-              where,
-              orderBy: [
-                { priority: 'desc' },
-                { updatedAt: 'desc' },
-              ],
-              include: {
-                createdBy: {
-                  select: {
-                    name: true,
-                    email: true,
-                  },
-                },
-                assignedTo: {
-                  select: {
-                    name: true,
-                    email: true,
-                  },
-                },
-                messages: {
-                  select: {
-                    id: true,
-                    isInternal: true,
-                  },
-                  where: user.role === UserRole.CUSTOMER ? { isInternal: false } : {},
-                },
-                _count: {
-                  select: {
-                    messages: true,
-                  },
-                },
-              },
-            });
-
-            // Get the last audit log for each ticket
-            const ticketIds = ticketsWithAuditLogs.map(ticket => ticket.id);
-            const lastAuditLogs = await ctx.prisma.auditLog.findMany({
-              where: {
-                entity: 'TICKET',
-                entityId: { in: ticketIds },
-                action: 'UPDATE',
-              },
-              orderBy: {
-                timestamp: 'desc',
-              },
-              include: {
-                user: {
-                  select: {
-                    name: true,
-                    email: true,
-                  },
-                },
-              },
-              distinct: ['entityId'],
-            });
-
-            // Create a map of ticket ID to last updater
-            const lastUpdaterMap = new Map(
-              lastAuditLogs.map(log => [log.entityId, log.user])
-            );
-
-            let nextCursor: typeof cursor | undefined = undefined;
-            if (ticketsWithAuditLogs.length > limit) {
-              const nextItem = ticketsWithAuditLogs.pop();
-              nextCursor = nextItem!.id;
-            }
-
-            let tickets = ticketsWithAuditLogs.map(ticket => ({
-              ...ticket,
-              lastUpdatedBy: lastUpdaterMap.get(ticket.id) || ticket.createdBy,
-              messageCount: ticket.messages.length,
-            }));
-
-            // Apply sorting based on sortConfig
-            tickets = tickets.sort((a, b) => {
-              for (const { field, direction } of input.sortConfig) {
-                let comparison = 0;
-                
-                switch (field) {
-                  case 'assignedToMe':
-                    const aAssignedToMe = a.assignedToId === ctx.user.id;
-                    const bAssignedToMe = b.assignedToId === ctx.user.id;
-                    comparison = Number(bAssignedToMe) - Number(aAssignedToMe);
-                    break;
-                  
-                  case 'priority':
-                    const priorityOrder = {
-                      [TicketPriority.URGENT]: 3,
-                      [TicketPriority.HIGH]: 2,
-                      [TicketPriority.MEDIUM]: 1,
-                      [TicketPriority.LOW]: 0,
-                    };
-                    comparison = priorityOrder[b.priority as TicketPriority] - priorityOrder[a.priority as TicketPriority];
-                    break;
-                  
-                  case 'updatedAt':
-                    comparison = b.updatedAt.getTime() - a.updatedAt.getTime();
-                    break;
-                }
-
-                if (comparison !== 0) {
-                  return direction === 'asc' ? -comparison : comparison;
-                }
-              }
-              return 0;
-            });
-
-            return {
-              tickets,
-              nextCursor,
-            };
-          } catch (error) {
-            if (error instanceof TRPCError) throw error;
-            throw new TRPCError({
-              code: 'INTERNAL_SERVER_ERROR',
-              message: 'Failed to fetch tickets',
-              cause: error,
-            });
-          }
-        },
-        {
-          revalidate: 30, // Cache for 30 seconds
-          tags: ['tickets'],
+        if (!user.clade) {
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'User clade not found'
+          });
         }
-      );
+
+        // Get user clade
+        const { data: userClade, error: userError } = await supabase
+          .from('users')
+          .select('clade')
+          .eq('id', ctx.user.id)
+          .single();
+
+        if (userError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: userError.message,
+          });
+        }
+
+        // Build query
+        let query = supabase
+          .from('tickets')
+          .select(`
+            *,
+            created_by:users!created_by_id (
+              name,
+              email
+            ),
+            assigned_to:users!assigned_to_id (
+              name,
+              email
+            ),
+            last_updated_by:users!last_updated_by_id (
+              name,
+              email
+            ),
+            messages (count)
+          `, { count: 'exact' });
+
+        // Apply filters
+        if (userClade.clade === UserClade.CUSTOMER) {
+          query = query.eq('customer_id', ctx.user.id);
+        } else if (input.filterByUser) {
+          query = query.eq('assigned_to_id', input.filterByUser);
+        }
+
+        if (!input.showCompleted) {
+          query = query.neq('status', TicketStatus.COMPLETED);
+        }
+
+        // Apply sorting
+        for (const sort of input.sortConfig) {
+          if (sort.field === 'assignedToMe') {
+            // Handle special case for assignedToMe
+            if (sort.direction === 'desc') {
+              query = query.order('assigned_to_id', { ascending: false, nullsLast: true });
+            } else {
+              query = query.order('assigned_to_id', { ascending: true, nullsFirst: true });
+            }
+          } else if (sort.field === 'priority') {
+            query = query.order('priority', { ascending: sort.direction === 'asc' });
+          } else if (sort.field === 'updatedAt') {
+            query = query.order('updated_at', { ascending: sort.direction === 'asc' });
+          }
+        }
+
+        // Apply pagination
+        if (input.cursor) {
+          query = query.gt('id', input.cursor);
+        }
+        query = query.limit(input.limit || 50);
+
+        const { data: tickets, error: ticketsError, count } = await query;
+
+        if (ticketsError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: ticketsError.message,
+          });
+        }
+
+        return {
+          tickets: tickets.map(ticket => ({
+            ...ticket,
+            message_count: ticket.messages?.[0]?.count || 0,
+          })) as TicketWithRelations[],
+          nextCursor: tickets.length === (input.limit || 50) ? tickets[tickets.length - 1].id : undefined,
+          total: count,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch tickets',
+          cause: error,
+        });
+      }
     }),
 
   byId: protectedProcedure
     .input(z.string())
     .query(async ({ input: ticketId, ctx }) => {
-      return withCache(
-        `${CACHE_KEYS.TICKET_DETAIL}:${ticketId}`,
-        { ticketId },
-        async () => {
-          const ticket = await ctx.prisma.ticket.findUnique({
-            where: { id: ticketId },
-            include: {
-              createdBy: {
-                select: {
-                  name: true,
-                  email: true,
-                },
-              },
-              assignedTo: {
-                select: {
-                  name: true,
-                  email: true,
-                },
-              },
-              messages: true,
-            },
+      try {
+        const { data: ticket, error: ticketError } = await ctx.supabase
+          .from('tickets')
+          .select(`
+            *,
+            created_by:users!created_by_id (
+              name,
+              email
+            ),
+            assigned_to:users!assigned_to_id (
+              name,
+              email
+            ),
+            last_updated_by:users!last_updated_by_id (
+              name,
+              email
+            ),
+            messages
+          `)
+          .eq('id', ticketId)
+          .single();
+
+        if (ticketError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: ticketError.message,
           });
+        }
 
-          if (!ticket) {
-            throw new TRPCError({
-              code: 'NOT_FOUND',
-              message: 'Ticket not found',
-            });
-          }
+        if (!ticket) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Ticket not found',
+          });
+        }
 
-          return ticket;
-        },
-        { revalidate: 30 } // Cache for 30 seconds
-      );
+        return ticket;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch ticket',
+          cause: error,
+        });
+      }
     }),
 
   update: protectedProcedure
@@ -347,24 +299,35 @@ export const ticketRouter = router({
       try {
         const { id, ...updateData } = input;
 
-        const ticket = await ctx.prisma.ticket.update({
-          where: { id },
-          data: updateData,
-        });
+        const { data: ticket, error: ticketError } = await ctx.supabase
+          .from('tickets')
+          .update(updateData)
+          .eq('id', id)
+          .select()
+          .single();
 
-        await createAuditLog({
-          action: 'UPDATE',
-          entity: 'TICKET',
-          entityId: ticket.id,
-          userId: ctx.user.id,
-          oldData: input,
-          newData: ticket,
-          prisma: ctx.prisma,
-        });
+        if (ticketError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: ticketError.message,
+          });
+        }
 
-        // Invalidate both list and detail caches
-        invalidateTicketCache();
-        invalidateTicketDetail(id);
+        // Create audit log
+        const { error: auditError } = await ctx.supabase
+          .from('audit_logs')
+          .insert({
+            action: 'UPDATE',
+            entity: 'TICKET',
+            entity_id: ticket.id,
+            user_id: ctx.user.id,
+            old_data: input,
+            new_data: ticket,
+          });
+
+        if (auditError) {
+          console.error('Failed to create audit log:', auditError);
+        }
 
         return ticket;
       } catch (error) {
@@ -380,34 +343,40 @@ export const ticketRouter = router({
   getStaffUsers: protectedProcedure
     .query(async ({ ctx }) => {
       try {
-        const user = await ctx.prisma.user.findUnique({
-          where: { id: ctx.user.id },
-          select: { role: true }
-        });
+        const { data: user, error: userError } = await ctx.supabase
+          .from('users')
+          .select('clade')
+          .eq('id', ctx.user.id)
+          .single();
 
-        if (!user || !ASSIGNMENT_ROLES.includes(user.role as typeof ASSIGNMENT_ROLES[number])) {
+        if (userError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: userError.message,
+          });
+        }
+
+        if (!user || !ASSIGNMENT_CLADES.includes(user.clade as typeof ASSIGNMENT_CLADES[number])) {
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'Only admins and managers can view staff users',
           });
         }
 
-        return await ctx.prisma.user.findMany({
-          where: {
-            role: {
-              in: [...STAFF_ROLES] // Convert to regular array for Prisma
-            }
-          },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-          },
-          orderBy: {
-            name: 'asc',
-          },
-        });
+        const { data: staffUsers, error: staffUsersError } = await ctx.supabase
+          .from('users')
+          .select('id, name, email, clade')
+          .in('clade', [...STAFF_CLADES])
+          .order('name', { ascending: true });
+
+        if (staffUsersError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: staffUsersError.message,
+          });
+        }
+
+        return staffUsers;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -421,21 +390,28 @@ export const ticketRouter = router({
   getAllTags: protectedProcedure
     .query(async ({ ctx }) => {
       try {
-        // Get tags from tickets
-        const tickets = await ctx.prisma.ticket.findMany({
-          select: {
-            tags: true,
-          },
-        });
+        const { data: tickets, error: ticketsError } = await ctx.supabase
+          .from('tickets')
+          .select('tags');
 
-        // Get tags from teams
-        const teams = await ctx.prisma.team.findMany({
-          select: {
-            tags: true,
-          },
-        });
+        if (ticketsError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: ticketsError.message,
+          });
+        }
 
-        // Get unique tags from both sources
+        const { data: teams, error: teamsError } = await ctx.supabase
+          .from('teams')
+          .select('tags');
+
+        if (teamsError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: teamsError.message,
+          });
+        }
+
         const tagSet = new Set<string>();
         tickets.forEach(ticket => {
           ticket.tags.forEach(tag => tagSet.add(tag));
@@ -463,81 +439,83 @@ export const ticketRouter = router({
     )
     .query(async ({ input, ctx }) => {
       try {
-        // Get all required data in a single transaction to avoid connection issues
-        const result = await ctx.prisma.$transaction(async (tx) => {
-          // Check if user has permission to assign tickets
-          const user = await tx.user.findUnique({
-            where: { id: ctx.user.id },
-            select: { role: true }
+        const { data: user, error: userError } = await ctx.supabase
+          .from('users')
+          .select('clade')
+          .eq('id', ctx.user.id)
+          .single();
+
+        if (userError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: userError.message,
           });
+        }
 
-          if (!user || !ASSIGNMENT_ROLES.includes(user.role as typeof ASSIGNMENT_ROLES[number])) {
-            throw new TRPCError({
-              code: 'FORBIDDEN',
-              message: 'You do not have permission to assign tickets',
-            });
-          }
-
-          // Get the ticket to find the customer
-          const ticket = await tx.ticket.findUnique({
-            where: { id: input.ticketId },
-            select: { customerId: true }
+        if (!user || !ASSIGNMENT_CLADES.includes(user.clade as typeof ASSIGNMENT_CLADES[number])) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'You do not have permission to assign tickets',
           });
+        }
 
-          if (!ticket) {
-            throw new TRPCError({
-              code: 'NOT_FOUND',
-              message: 'Ticket not found',
-            });
-          }
+        const { data: ticket, error: ticketError } = await ctx.supabase
+          .from('tickets')
+          .select('customer_id')
+          .eq('id', input.ticketId)
+          .single();
 
-          // Get all staff users and the ticket's customer
-          const [staffUsers, customer] = await Promise.all([
-            tx.user.findMany({
-              where: {
-                role: {
-                  in: [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT]
-                }
-              },
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                role: true,
-              },
-              orderBy: [
-                { role: 'asc' },
-                { name: 'asc' },
-              ],
-            }),
-            tx.user.findUnique({
-              where: { id: ticket.customerId },
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                role: true,
-              },
-            }),
-          ]);
+        if (ticketError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: ticketError.message,
+          });
+        }
 
-          if (!customer) {
-            throw new TRPCError({
-              code: 'NOT_FOUND',
-              message: 'Customer not found',
-            });
-          }
+        if (!ticket) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Ticket not found',
+          });
+        }
 
-          return {
-            staffUsers,
-            customer,
-          };
-        });
+        const { data: staffUsers, error: staffUsersError } = await ctx.supabase
+          .from('users')
+          .select('id, name, email, clade')
+          .in('clade', [...STAFF_CLADES])
+          .order('clade', { ascending: true })
+          .order('name', { ascending: true });
 
-        // Combine staff users and customer, marking the customer
+        if (staffUsersError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: staffUsersError.message,
+          });
+        }
+
+        const { data: customer, error: customerError } = await ctx.supabase
+          .from('users')
+          .select('id, name, email, clade')
+          .eq('id', ticket.customer_id)
+          .single();
+
+        if (customerError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: customerError.message,
+          });
+        }
+
+        if (!customer) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Customer not found',
+          });
+        }
+
         return [
-          ...result.staffUsers.map(user => ({ ...user, isCustomer: false })),
-          { ...result.customer, isCustomer: true },
+          ...staffUsers.map(user => ({ ...user, isCustomer: false })),
+          { ...customer, isCustomer: true },
         ];
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -548,4 +526,4 @@ export const ticketRouter = router({
         });
       }
     }),
-}); 
+});

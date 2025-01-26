@@ -1,15 +1,16 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import type { User, Session } from '@supabase/supabase-js';
 import { inferAsyncReturnType } from '@trpc/server';
 import { TRPCError } from '@trpc/server';
-import prisma from '@/app/prisma';
+import { UserClade } from '@/lib/supabase/types';
 
 interface CreateContextOptions {
   req: Request;
 }
 
 interface ContextUser extends User {
-  role?: string;
+  clade?: UserClade;
 }
 
 function parseCookies(cookieHeader: string | null) {
@@ -32,36 +33,19 @@ function getAuthToken(req: Request): string | null {
   return authHeader.substring(7);
 }
 
-async function getUserRole(userId: string | undefined): Promise<string | undefined> {
-  if (!userId) return undefined;
-  
-  try {
-    // Test the Prisma connection first
-    await prisma.$connect();
-    
-    const dbUser = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true }
-    });
-    
-    if (!dbUser) {
-      throw new TRPCError({
-        code: 'UNAUTHORIZED',
-        message: 'User not found in database',
-      });
-    }
-    
-    return dbUser.role;
-  } catch (error) {
-    console.error(`Failed to get user role for ${userId}:`, error);
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Database connection error',
-      cause: error,
-    });
-  } finally {
-    await prisma.$disconnect();
+async function getUserProfile(supabase: ReturnType<typeof createClient>, userId: string): Promise<{ clade: UserClade } | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('clade')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching user profile:', error);
+    return null;
   }
+
+  return data;
 }
 
 export async function createContext({ req }: CreateContextOptions) {
@@ -78,6 +62,7 @@ export async function createContext({ req }: CreateContextOptions) {
     const authToken = getAuthToken(req);
     console.log('Auth token present:', !!authToken);
 
+    // Create the Supabase client with the anon key for auth
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -99,11 +84,6 @@ export async function createContext({ req }: CreateContextOptions) {
           detectSessionInUrl: false,
           persistSession: true,
           autoRefreshToken: true,
-        },
-        global: {
-          headers: authToken ? {
-            Authorization: `Bearer ${authToken}`
-          } : undefined,
         },
       }
     );
@@ -150,30 +130,32 @@ export async function createContext({ req }: CreateContextOptions) {
 
     console.log('Session found for user:', session.user.email);
 
-    const user = session.user as ContextUser;
-    
-    // Only try to get the role if we have a valid user
-    try {
-      const role = await getUserRole(user.id);
-      user.role = role;
-      console.log('User role:', role);
-    } catch (error) {
-      console.error('Error getting user role:', error);
-      if (error instanceof TRPCError) {
-        throw error;
+    // Create a service role client for database operations
+    const serviceClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        }
       }
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to get user role',
-        cause: error,
-      });
-    }
+    );
+
+    // Get the user's profile with clade
+    const profile = await getUserProfile(serviceClient, session.user.id);
+    
+    const user: ContextUser = {
+      ...session.user,
+      clade: profile?.clade,
+    };
+
+    console.log('User profile loaded:', { id: user.id, email: user.email, clade: user.clade });
 
     return {
       req,
-      prisma,
       user,
-      supabase,
+      supabase: serviceClient, // Use the service client for database operations
     };
   } catch (error) {
     console.error('Context creation error:', error);
@@ -188,4 +170,4 @@ export async function createContext({ req }: CreateContextOptions) {
   }
 }
 
-export type Context = inferAsyncReturnType<typeof createContext>; 
+export type Context = inferAsyncReturnType<typeof createContext>;

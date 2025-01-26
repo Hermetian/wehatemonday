@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/app/lib/utils/common";
-import { useAuth } from "@/app/lib/auth/AuthContext";
-import { UserRole } from "@prisma/client";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth/AuthContext";
+import { UserClade } from "@/lib/supabase/types";
 
 export function Navigation() {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { clade } = useAuth();
 
-  const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.ADMIN;
+  const isManager = clade === UserClade.MANAGER || clade === UserClade.ADMIN;
 
   return (
     <nav className="flex space-x-4">

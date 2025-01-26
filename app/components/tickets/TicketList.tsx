@@ -2,7 +2,7 @@ import React from 'react';
 import { trpc } from '@/app/lib/trpc/client';
 import { TicketStatus, TicketPriority, SortConfig } from '@/app/types/tickets';
 import { useAuth } from '@/app/lib/auth/AuthContext';
-import { UserRole } from '@prisma/client';
+import { UserClade } from '@/lib/supabase/types';
 import { TicketDialog } from './TicketDialog';
 import { MessageCircle, SortAsc, Filter, X } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
@@ -69,7 +69,7 @@ export interface ProcessedTicket extends Omit<RawTicket, 'status' | 'priority'> 
 }
 
 interface TicketListProps {
-  filterByUser?: string;
+  userId: string;
 }
 
 interface TicketListResponse {
@@ -83,8 +83,8 @@ const SORT_LABELS: Record<SortConfig['field'], string> = {
   updatedAt: 'Last updated',
 };
 
-export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
-  const { role } = useAuth();
+export const TicketList: React.FC<TicketListProps> = ({ userId }) => {
+  const { clade: authClade } = useAuth();
   const [showCompleted, setShowCompleted] = React.useState(false);
   const [sortConfig, setSortConfig] = React.useState<SortConfig[]>([
     { field: 'assignedToMe', direction: 'desc' },
@@ -130,7 +130,7 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
       sortConfig,
       tags: selectedTags,
       includeUntagged,
-      ...(filterByUser ? { filterByUser } : {})
+      ...(authClade === UserClade.CUSTOMER ? { filterByUser: userId } : {})
     },
     {
       getNextPageParam: (lastPage: TicketListResponse) => lastPage.nextCursor,
@@ -206,7 +206,7 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
         <h2 className="text-2xl font-bold">
-          {role === UserRole.CUSTOMER ? 'My Tickets' : 'All Tickets'}
+          {authClade === UserClade.CUSTOMER ? 'My Tickets' : 'All Tickets'}
         </h2>
         <div className="flex flex-wrap items-center gap-4">
           {/* Show completed tickets toggle */}
@@ -346,7 +346,7 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
                 <p className="text-gray-800 text-sm">{ticket.description}</p>
                 
                 {/* Show customer and assigned agent info for non-customers */}
-                {role !== UserRole.CUSTOMER && (
+                {authClade !== UserClade.CUSTOMER && (
                   <div className="text-sm text-gray-600 space-y-1">
                     <p>
                       <span className="font-medium">Customer:</span>{' '}

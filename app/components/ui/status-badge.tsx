@@ -1,7 +1,7 @@
 import { cn } from "@/app/lib/utils/common";
 import { Badge } from "./badge";
 import { TicketStatus, TicketPriority } from "@/app/types/tickets";
-import { UserRole } from "@prisma/client";
+import { UserClade } from "@/lib/supabase/types";
 
 const statusStyles = {
   [TicketStatus.OPEN]: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -18,29 +18,30 @@ const priorityStyles = {
   [TicketPriority.URGENT]: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
 };
 
-const roleStyles = {
-  [UserRole.CUSTOMER]: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
-  [UserRole.AGENT]: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  [UserRole.MANAGER]: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
-  [UserRole.ADMIN]: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-};
+const cladeVariants = {
+  [UserClade.CUSTOMER]: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
+  [UserClade.AGENT]: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  [UserClade.MANAGER]: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+  [UserClade.ADMIN]: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+} as const;
 
 export interface StatusBadgeProps extends React.HTMLAttributes<HTMLDivElement> {
   status?: TicketStatus;
   priority?: TicketPriority;
-  role?: UserRole;
+  clade?: UserClade;
 }
 
 export function StatusBadge({ 
   status, 
   priority, 
-  role,
+  clade,
   className,
+  children,
   ...props 
 }: StatusBadgeProps) {
   const style = status ? statusStyles[status] 
                : priority ? priorityStyles[priority]
-               : role ? roleStyles[role]
+               : clade ? cladeVariants[clade]
                : "bg-gray-100 text-gray-800";
 
   return (
@@ -52,6 +53,8 @@ export function StatusBadge({
         className
       )}
       {...props}
-    />
+    >
+      {children}
+    </Badge>
   );
 } 

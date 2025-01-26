@@ -1,69 +1,104 @@
-import { PrismaClient, Prisma } from '@prisma/client';
+import { SupabaseClient } from '@supabase/supabase-js';
 
-export async function cleanupExpiredTestData(prisma: PrismaClient) {
+export async function cleanupExpiredTestData(supabase: SupabaseClient) {
   try {
-    // Find all expired test users
-    const expiredUsers = await prisma.user.findMany({
-      where: {
-        testBatchId: { not: null },
-        cleanupAt: { lte: new Date() }
-      } as Prisma.UserWhereInput
-    });
+    // Find expired test users
+    const { data: expiredUsers, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .not('test_batch_id', 'is', null)
+      .lt('cleanup_at', new Date().toISOString());
 
-    if (expiredUsers.length === 0) {
-      return { success: true, deletedCount: 0 };
+    if (userError) {
+      throw userError;
     }
 
-    // Delete all related data in a transaction
-    await prisma.$transaction(async (tx) => {
-      // Delete audit logs
-      await tx.auditLog.deleteMany({
-        where: {
-          userId: {
-            in: expiredUsers.map(u => u.id)
-          }
-        }
-      });
+    // Delete expired test users and their related data
+    if (expiredUsers.length > 0) {
+      const userIds = expiredUsers.map(user => user.id);
 
-      // Delete messages
-      await tx.message.deleteMany({
-        where: {
-          ticket: {
-            OR: [
-              { createdById: { in: expiredUsers.map(u => u.id) } },
-              { assignedToId: { in: expiredUsers.map(u => u.id) } }
-            ]
-          }
-        }
-      });
+      // Delete related tickets first
+      const { error: ticketError } = await supabase
+        .from('tickets')
+        .delete()
+        .in('customer_id', userIds);
 
-      // Delete tickets
-      await tx.ticket.deleteMany({
-        where: {
-          OR: [
-            { createdById: { in: expiredUsers.map(u => u.id) } },
-            { assignedToId: { in: expiredUsers.map(u => u.id) } }
-          ]
-        }
-      });
+      if (ticketError) {
+        throw ticketError;
+      }
 
-      // Delete users
-      await tx.user.deleteMany({
-        where: {
-          id: { in: expiredUsers.map(u => u.id) }
-        }
-      });
-    });
+      // Delete related messages
+      const { error: messageError } = await supabase
+        .from('messages')
+        .delete()
+        .in('user_id', userIds);
+
+      if (messageError) {
+        throw messageError;
+      }
+
+      // Delete team memberships
+      const { error: teamError } = await supabase
+        .from('team_members')
+        .delete()
+        .in('user_id', userIds);
+
+      if (teamError) {
+        throw teamError;
+      }
+
+      // Finally delete the users
+      const { error: deleteError } = await supabase
+        .from('users')
+        .delete()
+        .in('id', userIds);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+    }
+
+    // Find and delete expired test tickets
+    const { data: expiredTickets, error: ticketError } = await supabase
+      .from('tickets')
+      .select('id')
+      .not('test_batch_id', 'is', null)
+      .lt('cleanup_at', new Date().toISOString());
+
+    if (ticketError) {
+      throw ticketError;
+    }
+
+    if (expiredTickets.length > 0) {
+      const ticketIds = expiredTickets.map(ticket => ticket.id);
+
+      // Delete related messages first
+      const { error: messageError } = await supabase
+        .from('messages')
+        .delete()
+        .in('ticket_id', ticketIds);
+
+      if (messageError) {
+        throw messageError;
+      }
+
+      // Delete the tickets
+      const { error: deleteError } = await supabase
+        .from('tickets')
+        .delete()
+        .in('id', ticketIds);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+    }
 
     return {
-      success: true,
-      deletedCount: expiredUsers.length
+      deletedUsers: expiredUsers.length,
+      deletedTickets: expiredTickets.length,
     };
   } catch (error) {
-    console.error('Test data cleanup error:', error);
-    return {
-      success: false,
-      error: 'Failed to cleanup test data'
-    };
+    console.error('Error cleaning up test data:', error);
+    throw error;
   }
-} 
+}

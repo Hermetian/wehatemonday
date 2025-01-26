@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useAuth } from '@/app/lib/auth/AuthContext';
 import { useRouter } from 'next/navigation';
-import { UserRole } from '@prisma/client';
+import { useAuth } from '@app/lib/auth/AuthContext';
+import { UserClade } from '@/lib/supabase/types';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
@@ -22,7 +22,7 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
-  const [role, setRole] = useState<UserRole>(UserRole.CUSTOMER);
+  const [clade, setClade] = useState<UserClade>(UserClade.CUSTOMER);
   const router = useRouter();
   const { signIn, signUp } = useAuth();
 
@@ -31,7 +31,7 @@ export default function Auth() {
     setError('');
     try {
       if (isSignUp) {
-        await signUp(email, password, role);
+        await signUp(email, password, clade);
       } else {
         await signIn(email, password);
       }
@@ -91,16 +91,15 @@ export default function Auth() {
 
             {isSignUp && (
               <div className="space-y-2">
-                <Label htmlFor="role">Account Type</Label>
-                <Select value={role} onValueChange={(value) => setRole(value as UserRole)}>
+                <Label htmlFor="clade">Clade</Label>
+                <Select value={clade} onValueChange={(value) => setClade(value as UserClade)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select your role" />
+                    <SelectValue placeholder="Select your clade" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={UserRole.CUSTOMER}>Customer</SelectItem>
-                    <SelectItem value={UserRole.AGENT}>Agent</SelectItem>
-                    <SelectItem value={UserRole.MANAGER}>Manager</SelectItem>
-                    <SelectItem value={UserRole.ADMIN}>Admin</SelectItem>
+                    {Object.values(UserClade).map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -126,4 +125,4 @@ export default function Auth() {
       </div>
     </div>
   );
-} 
+}

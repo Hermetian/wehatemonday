@@ -1,8 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
-import { UserRole } from '@prisma/client';
-import prisma from '@/app/prisma';
-import { createAuditLog } from '@/app/lib/utils/audit-logger';
 
 export async function POST(request: Request) {
   try {
@@ -11,7 +8,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    const { email, role, action } = body;
+    const { email, clade, action } = body;
     if (!email || !action) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
@@ -43,78 +40,47 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    // Verify database connection before proceeding
-    try {
-      await prisma.$connect();
-    } catch (dbError) {
-      console.error('Database connection error:', dbError);
-      return NextResponse.json({ error: 'Database connection failed' }, { status: 503 });
-    }
-
     if (action === 'signup') {
-      // Get existing user data for audit log
-      const existingUserData = await prisma.user.findUnique({
-        where: { id: supabaseUser.id },
-      });
+      // Update user metadata with clade
+      const { error: updateError } = await supabase.auth.admin.updateUserById(
+        supabaseUser.id,
+        { app_metadata: { clade } }
+      );
 
-      if (existingUserData) {
-        // Update existing user's role
-        await prisma.user.update({
-          where: { id: supabaseUser.id },
-          data: { 
-            role: role as UserRole,
-            updatedAt: new Date()
-          }
-        });
-
-        // Create audit log for role update
-        await createAuditLog({
-          action: 'UPDATE',
-          entity: 'USER',
-          entityId: supabaseUser.id,
-          userId: supabaseUser.id,
-          oldData: existingUserData,
-          newData: { ...existingUserData, role },
-          prisma,
-        });
-
-        return NextResponse.json({ user: supabaseUser, role });
+      if (updateError) {
+        return NextResponse.json({ error: updateError.message }, { status: 500 });
       }
 
-      // Create new user in database
-      const newUser = await prisma.user.create({
-        data: {
+      // Also update the users table to maintain both places
+      const { error: userUpdateError } = await supabase
+        .from('users')
+        .upsert({ 
           id: supabaseUser.id,
-          email,
-          role: role as UserRole,
-        }
-      });
+          email: email,
+          clade: clade
+        });
 
-      // Create audit log for new user
-      await createAuditLog({
-        action: 'CREATE',
-        entity: 'USER',
-        entityId: supabaseUser.id,
-        userId: supabaseUser.id,
-        oldData: null,
-        newData: newUser,
-        prisma,
-      });
+      if (userUpdateError) {
+        return NextResponse.json({ error: userUpdateError.message }, { status: 500 });
+      }
 
-      return NextResponse.json({ user: supabaseUser, role });
+      return NextResponse.json({ user: supabaseUser, clade });
     }
 
     if (action === 'signin') {
-      const dbUser = await prisma.user.findUnique({
-        where: { id: supabaseUser.id },
-        select: { role: true }
-      });
-
-      if (!dbUser) {
-        return NextResponse.json({ error: 'User not found in database' }, { status: 404 });
+      // Get clade from user metadata
+      const { data: { user }, error: getUserError } = await supabase.auth.admin.getUserById(supabaseUser.id);
+      
+      if (getUserError || !user) {
+        return NextResponse.json({ error: 'Failed to get user data' }, { status: 500 });
       }
 
-      return NextResponse.json({ user: supabaseUser, role: dbUser.role });
+      const userClade = user.app_metadata?.clade;
+      if (!userClade) {
+        return NextResponse.json({ error: 'User clade not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({ user: supabaseUser, clade: userClade });
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
@@ -122,7 +88,5 @@ export async function POST(request: Request) {
     console.error('Auth error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
     return NextResponse.json({ error: errorMessage }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
-} 
+}

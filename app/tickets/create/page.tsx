@@ -1,26 +1,26 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useAuth } from '@/app/lib/auth/AuthContext';
-import { CreateTicketForm } from '@/app/components/tickets/CreateTicketForm';
 import { useRouter } from 'next/navigation';
-import { UserRole } from '@prisma/client';
-import { ProtectedRoute } from '@/app/components/auth/ProtectedRoute';
+import { useAuth } from '@app/lib/auth/AuthContext';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { CreateTicketForm } from '@/components/tickets/CreateTicketForm';
+import { UserClade } from '@/lib/supabase/types';
 
 export default function CreateTicketPage() {
-  const { user, role } = useAuth();
+  const { user, clade } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!user) {
       router.push('/auth/signin');
     } 
-    else if (role !== UserRole.CUSTOMER && role !== UserRole.AGENT) {
+    else if (clade !== UserClade.CUSTOMER && clade !== UserClade.AGENT) {
       router.push('/homepage');
     }
-  }, [user, role, router]);
+  }, [user, clade, router]);
 
-  if (!user || (role !== UserRole.CUSTOMER && role !== UserRole.AGENT)) {
+  if (!user || (clade !== UserClade.CUSTOMER && clade !== UserClade.AGENT)) {
     return null;
   }
 
@@ -36,4 +36,4 @@ export default function CreateTicketPage() {
       </div>
     </ProtectedRoute>
   );
-} 
+}

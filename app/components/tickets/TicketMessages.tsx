@@ -1,7 +1,7 @@
 import React from 'react';
 import { trpc } from '@/app/lib/trpc/client';
 import { useAuth } from '@/app/lib/auth/AuthContext';
-import { UserRole } from '@prisma/client';
+import { UserClade } from '@/lib/supabase/types';
 import { Button } from '@/app/components/ui/button';
 import { Label } from '@/app/components/ui/label';
 import { cn } from '@/app/lib/utils/common';
@@ -19,7 +19,7 @@ interface TicketMessagesProps {
 }
 
 export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
-  const { role } = useAuth();
+  const { clade } = useAuth();
   const [content, setContent] = React.useState('');
   const [contentHtml, setContentHtml] = React.useState('');
   const [isInternal, setIsInternal] = React.useState(false);
@@ -48,7 +48,9 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
     });
   };
 
-  const isStaff = role === UserRole.ADMIN || role === UserRole.MANAGER || role === UserRole.AGENT;
+  const canSeeInternalMessages = clade === UserClade.ADMIN || 
+                               clade === UserClade.MANAGER || 
+                               clade === UserClade.AGENT;
 
   return (
     <div className="space-y-6">
@@ -69,19 +71,21 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
                   : "bg-white border border-gray-200"
               )}
             >
-              <div className="flex items-start justify-between">
-                <div className="space-y-1">
-                  <RichTextContent content={message.contentHtml || message.content} />
-                  <p className="text-xs text-gray-500">
-                    {new Date(message.createdAt).toLocaleString()}
-                    {message.isInternal && (
-                      <span className="ml-2 text-yellow-600 font-medium">
-                        Internal Note
-                      </span>
-                    )}
-                  </p>
+              {(!message.isInternal || canSeeInternalMessages) && (
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <RichTextContent content={message.contentHtml || message.content} />
+                    <p className="text-xs text-gray-500">
+                      {new Date(message.createdAt).toLocaleString()}
+                      {message.isInternal && (
+                        <span className="ml-2 text-yellow-600 font-medium">
+                          Internal Note
+                        </span>
+                      )}
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ))
         ) : (
@@ -106,7 +110,7 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
           />
         </div>
 
-        {isStaff && (
+        {canSeeInternalMessages && (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
