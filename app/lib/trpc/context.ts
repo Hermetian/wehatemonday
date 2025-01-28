@@ -1,15 +1,46 @@
 import { createServerClient } from '@supabase/ssr';
-import type { User, Session } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
 import { inferAsyncReturnType } from '@trpc/server';
 import { TRPCError } from '@trpc/server';
-import prisma from '@/app/prisma';
+import { Role } from '@/app/types/auth';
+
+// Shared function to create Supabase client
+export function createSupabaseContext(req: Request) {
+  const cookieHeader = req.headers.get('cookie');
+  const authHeader = req.headers.get('authorization');
+  const authToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieHeader?.split('; ')
+            .find(c => c.startsWith(`${name}=`))
+            ?.split('=')[1];
+        },
+        set() { return; },
+        remove() { return; },
+      },
+      auth: {
+        detectSessionInUrl: false,
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+      global: {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+      },
+    }
+  );
+}
 
 interface CreateContextOptions {
   req: Request;
 }
 
 interface ContextUser extends User {
-  role?: string;
+  role: Role;  // We use the Role type from auth.ts
 }
 
 function parseCookies(cookieHeader: string | null) {
@@ -32,35 +63,73 @@ function getAuthToken(req: Request): string | null {
   return authHeader.substring(7);
 }
 
-async function getUserRole(userId: string | undefined): Promise<string | undefined> {
-  if (!userId) return undefined;
-  
+async function verifyUserRole(supabase: ReturnType<typeof createServerClient>, user: User): Promise<Role> {
   try {
-    // Test the Prisma connection first
-    await prisma.$connect();
+    // Get role from JWT metadata first
+    const metadataRole = user.app_metadata?.user_role as Role;
+    if (!metadataRole) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'No role found in user metadata',
+      });
+    }
+
+    // Verify role exists in public.users table
+    const { data: dbUser, error: dbError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
     
-    const dbUser = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true }
-    });
-    
-    if (!dbUser) {
+    if (dbError || !dbUser) {
+      console.error('Error verifying user role in database:', dbError);
       throw new TRPCError({
         code: 'UNAUTHORIZED',
         message: 'User not found in database',
       });
     }
-    
-    return dbUser.role;
+
+    const dbRole = dbUser.role as Role;
+    if (dbRole !== metadataRole) {
+      console.warn(`Role mismatch - Auth: ${metadataRole}, DB: ${dbRole}`);
+      
+      // If there's a mismatch, update the metadata to match the database
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: { user_role: dbRole }
+      });
+      
+      if (updateError) {
+        console.error('Failed to sync auth metadata:', updateError);
+      }
+
+      // Use service role client to update database role claim
+      const serviceClient = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { cookies: { get: () => '', set: () => {}, remove: () => {} } }
+      );
+
+      const { error: dbRoleError } = await serviceClient.rpc('set_claim', {
+        uid: user.id,
+        claim: 'role',
+        value: dbRole.toLowerCase()
+      });
+
+      if (dbRoleError) {
+        console.error('Failed to sync database role:', dbRoleError);
+      }
+      
+      return dbRole;
+    }
+
+    return metadataRole;
   } catch (error) {
-    console.error(`Failed to get user role for ${userId}:`, error);
-    throw new TRPCError({
+    console.error(`Failed to verify user role for ${user.id}:`, error);
+    throw error instanceof TRPCError ? error : new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'Database connection error',
+      message: 'Failed to verify user role',
       cause: error,
     });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -108,9 +177,9 @@ export async function createContext({ req }: CreateContextOptions) {
       }
     );
 
-    let session: Session | null = null;
+    let session = null;
     let sessionError = null;
-
+    
     // Try getting session from cookies first
     const cookieSession = await supabase.auth.getSession();
     if (cookieSession.data.session) {
@@ -150,37 +219,31 @@ export async function createContext({ req }: CreateContextOptions) {
 
     console.log('Session found for user:', session.user.email);
 
-    const user = session.user as ContextUser;
-    
-    // Only try to get the role if we have a valid user
+    // Get and verify user role
     try {
-      const role = await getUserRole(user.id);
-      user.role = role;
-      console.log('User role:', role);
+    const role = await verifyUserRole(supabase, session.user);
+    const contextUser: ContextUser = {
+      ...session.user,
+      role
+    };
+      console.log('Verified user role:', role);
+
+    return {
+      req,
+      user: contextUser,
+      supabase,
+    };
     } catch (error) {
       console.error('Error getting user role:', error);
-      if (error instanceof TRPCError) {
-        throw error;
-      }
-      throw new TRPCError({
+      throw error instanceof TRPCError ? error : new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Failed to get user role',
         cause: error,
       });
     }
-
-    return {
-      req,
-      prisma,
-      user,
-      supabase,
-    };
   } catch (error) {
     console.error('Context creation error:', error);
-    if (error instanceof TRPCError) {
-      throw error;
-    }
-    throw new TRPCError({
+    throw error instanceof TRPCError ? error : new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Context creation failed',
       cause: error,
@@ -188,4 +251,4 @@ export async function createContext({ req }: CreateContextOptions) {
   }
 }
 
-export type Context = inferAsyncReturnType<typeof createContext>; 
+export type Context = inferAsyncReturnType<typeof createContext>;

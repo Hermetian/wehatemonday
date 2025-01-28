@@ -14,22 +14,33 @@ function AppProviders({ children }: { children: React.ReactNode }) {
         retry: 1,
         refetchOnWindowFocus: false,
         staleTime: 5000,
+        onError: (error) => {
+          console.error('Query error:', error);
+        },
+      },
+      mutations: {
+        onError: (error) => {
+          console.error('Mutation error:', error);
+        },
       },
     },
   }));
+
   const [trpcClient] = useState(() => trpc.createClient(getTRPCClient()));
 
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
-      <trpc.Provider client={trpcClient} queryClient={queryClient}>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>{children}</AuthProvider>
-        </QueryClientProvider>
-      </trpc.Provider>
+      <AuthProvider>
+        <trpc.Provider client={trpcClient} queryClient={queryClient}>
+          <QueryClientProvider client={queryClient}>
+            {children}
+          </QueryClientProvider>
+        </trpc.Provider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return <AppProviders>{children}</AppProviders>;
-} 
+}

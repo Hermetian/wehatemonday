@@ -196,32 +196,32 @@ export function RichTextEditor({
 }: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        codeBlock: false,
-        bulletList: false,
-        orderedList: false,
-        blockquote: false,
-      }),
+      StarterKit,
       TextStyle,
-      Underline,
       FontFamily.configure({
         types: ['textStyle'],
       }),
+      Underline,
       Link.configure({
         openOnClick: false,
-        HTMLAttributes: {
-          class: 'text-blue-600 hover:text-blue-800 underline',
-        },
       }),
       Placeholder.configure({
         placeholder,
       }),
     ],
     content,
-    editable: !readOnly,
     onUpdate: ({ editor }) => {
-      onChange?.(editor.getHTML())
+      onChange?.(editor.getHTML());
     },
+    editorProps: {
+      attributes: {
+        class: cn(
+          'prose prose-sm max-w-none focus:outline-none',
+          className
+        ),
+      },
+    },
+    immediatelyRender: false,
   })
 
   if (!editor) return null;

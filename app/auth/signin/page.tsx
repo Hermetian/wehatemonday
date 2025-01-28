@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/app/lib/auth/AuthContext';
-import { useRouter } from 'next/navigation';
-import { UserRole } from '@prisma/client';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Role } from '@/app/types/auth';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
@@ -22,23 +22,54 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
-  const [role, setRole] = useState<UserRole>(UserRole.CUSTOMER);
+  const [role, setRole] = useState<Role>('CUSTOMER');
   const router = useRouter();
-  const { signIn, signUp } = useAuth();
+  const searchParams = useSearchParams();
+  const { signIn, signUp, user, loading } = useAuth();
+
+  // Handle redirect after successful auth
+  useEffect(() => {
+    if (user && !loading) {
+      console.log('Sign-in page: Auth successful, handling redirect...');
+      console.log('Sign-in page: Current user:', {
+        email: user.email,
+        role: user.app_metadata?.user_role,
+        provider: user.app_metadata?.provider
+      });
+      const redirect = searchParams.get('redirect');
+      console.log('Sign-in page: Redirect param:', redirect);
+      
+      // Always go to homepage if redirect is homepage or root
+      if (!redirect || redirect === '/' || redirect.startsWith('/homepage')) {
+        console.log('Sign-in page: Redirecting to homepage...');
+        // Use replace to prevent back navigation
+        router.replace('/homepage/');
+        return;
+      }
+
+      // Otherwise, go to the requested page
+      console.log('Sign-in page: Redirecting to:', redirect);
+      // Use replace to prevent back navigation
+      router.replace(redirect);
+    }
+  }, [user, loading, router, searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     try {
+      console.log('Sign-in page: Starting authentication...');
+      
       if (isSignUp) {
         await signUp(email, password, role);
       } else {
         await signIn(email, password);
       }
-      router.push('/homepage');
+      console.log('Sign-in page: Authentication successful');
+      
     } catch (error) {
-      console.error(error);
-      setError(`Failed to ${isSignUp ? 'sign up' : 'sign in'}`);
+      console.error('Sign-in page: Authentication error:', error);
+      setError(`Failed to ${isSignUp ? 'sign up' : 'sign in'}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -92,15 +123,15 @@ export default function Auth() {
             {isSignUp && (
               <div className="space-y-2">
                 <Label htmlFor="role">Account Type</Label>
-                <Select value={role} onValueChange={(value) => setRole(value as UserRole)}>
+                <Select value={role} onValueChange={(value) => setRole(value as Role)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select your role" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={UserRole.CUSTOMER}>Customer</SelectItem>
-                    <SelectItem value={UserRole.AGENT}>Agent</SelectItem>
-                    <SelectItem value={UserRole.MANAGER}>Manager</SelectItem>
-                    <SelectItem value={UserRole.ADMIN}>Admin</SelectItem>
+                    <SelectItem value="CUSTOMER">Customer</SelectItem>
+                    <SelectItem value="AGENT">Agent</SelectItem>
+                    <SelectItem value="MANAGER">Manager</SelectItem>
+                    <SelectItem value="ADMIN">Admin</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -108,8 +139,8 @@ export default function Auth() {
           </div>
 
           <div>
-            <Button type="submit" className="w-full">
-              {isSignUp ? 'Create Account' : 'Sign In'}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? 'Loading...' : isSignUp ? 'Create Account' : 'Sign In'}
             </Button>
           </div>
 

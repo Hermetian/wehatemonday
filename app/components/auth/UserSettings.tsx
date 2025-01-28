@@ -35,7 +35,7 @@ import { trpc } from '@/app/lib/trpc/client';
 import type { TRPCClientErrorLike } from '@trpc/client';
 import type { AppRouter } from '@/app/lib/trpc/routers/_app';
 import { useRouter } from 'next/navigation';
-import { UserRole } from '@prisma/client';
+import { Role, VALID_ROLES } from '@/app/types/auth';
 import { StatusBadge } from '@/app/components/ui/status-badge';
 
 export function UserSettings() {
@@ -53,8 +53,8 @@ export function UserSettings() {
   const [isCurrentPasswordIncorrect, setIsCurrentPasswordIncorrect] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.CUSTOMER);
-  const [pendingRole, setPendingRole] = useState<UserRole>(UserRole.CUSTOMER);
+  const [currentRole, setCurrentRole] = useState<Role>('CUSTOMER');
+  const [pendingRole, setPendingRole] = useState<Role>('CUSTOMER');
   const [currentPassword, setCurrentPassword] = useState('');
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -319,15 +319,16 @@ export function UserSettings() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role" className="text-foreground">Role</Label>
-                <Select value={pendingRole} onValueChange={(value: UserRole) => setPendingRole(value)}>
+                <Select value={pendingRole} onValueChange={(value: Role) => setPendingRole(value)}>
                   <SelectTrigger className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-[#1E2D3D] border-[#1E2D3D]">
-                    {Object.values(UserRole).map((r) => (
+                    {VALID_ROLES.map((r) => (
                       <SelectItem key={r} value={r} className="text-foreground hover:bg-[#0A1A2F]">
                         <div className="flex items-center gap-2">
-                          <StatusBadge role={r}>{r}</StatusBadge>
+                          <StatusBadge role={r} />
+                          {r}
                         </div>
                       </SelectItem>
                     ))}

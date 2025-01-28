@@ -1,14 +1,7 @@
 import { httpBatchLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 import type { AppRouter } from '@/app/lib/trpc/routers/_app';
-
-function getBaseUrl() {
-  if (typeof window !== 'undefined') return '';
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return `http://localhost:${process.env.PORT ?? 3000}`;
-}
-
-export const trpc = createTRPCReact<AppRouter>();
+import { transformer } from '@/app/lib/trpc/transformer';
 
 let accessToken: string | null = null;
 
@@ -16,26 +9,34 @@ export function setAccessToken(token: string | null) {
   accessToken = token;
 }
 
+export const trpc = createTRPCReact<AppRouter>();
+
 export function getTRPCClient() {
   return {
     links: [
       httpBatchLink({
-        url: `${getBaseUrl()}/api/trpc`,
+        url: '/api/trpc',
         headers() {
-          return accessToken 
-            ? { 'Authorization': `Bearer ${accessToken}` }
-            : {};
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+          };
+          if (accessToken) {
+            headers['Authorization'] = `Bearer ${accessToken}`;
+          }
+          return headers;
+        },
+        fetch(url, options: RequestInit = {}) {
+          return fetch(url, {
+            ...options,
+            credentials: 'include',
+            headers: {
+              ...options.headers,
+              'Content-Type': 'application/json',
+            },
+          });
         },
       }),
     ],
-    queryClientConfig: {
-      defaultOptions: {
-        queries: {
-          retry: 1,
-          refetchOnWindowFocus: false,
-          staleTime: 5000,
-        },
-      },
-    },
+    transformer,
   };
-} 
+}

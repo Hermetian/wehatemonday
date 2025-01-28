@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { router, protectedProcedure } from '@/app/lib/trpc/trpc';
 import { TRPCError } from '@trpc/server';
-import { UserRole } from '@prisma/client';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
 
 export const messageRouter = router({
@@ -17,33 +16,24 @@ export const messageRouter = router({
     .mutation(async ({ input, ctx }) => {
       try {
         // Check if the ticket exists and if the user has access to it
-        const ticket = await ctx.prisma.ticket.findUnique({
-          where: { id: input.ticketId },
-          select: { customerId: true },
-        });
+        const { data: ticket, error: ticketError } = await ctx.supabase
+          .from('tickets')
+          .select('customer_id')
+          .eq('id', input.ticketId)
+          .single();
 
-        if (!ticket) {
+        if (ticketError || !ticket) {
           throw new TRPCError({
             code: 'NOT_FOUND',
             message: 'Ticket not found',
           });
         }
 
-        // Get the user's role
-        const user = await ctx.prisma.user.findUnique({
-          where: { id: ctx.user.id },
-          select: { role: true },
-        });
-
-        if (!user) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'User not found',
-          });
-        }
+        // Get the user's role from context
+        const userRole = ctx.user.role;
 
         // Only allow internal messages from staff
-        if (input.isInternal && user.role === UserRole.CUSTOMER) {
+        if (input.isInternal && userRole === 'CUSTOMER') {
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'Only staff can create internal messages',
@@ -51,27 +41,32 @@ export const messageRouter = router({
         }
 
         // Customers can only message their own tickets
-        if (user.role === UserRole.CUSTOMER && ticket.customerId !== ctx.user.id) {
+        if (userRole === 'CUSTOMER' && ticket.customer_id !== ctx.user.id) {
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'You can only message your own tickets',
           });
         }
 
-        const message = await ctx.prisma.message.create({
-          data: {
+        // Create the message
+        const { data: message, error: messageError } = await ctx.supabase
+          .from('messages')
+          .insert([{
             content: input.content,
-            contentHtml: input.contentHtml,
-            ticketId: input.ticketId,
-            isInternal: input.isInternal ?? false,
-          },
-        });
+            content_html: input.contentHtml,
+            ticket_id: input.ticketId,
+            is_internal: input.isInternal ?? false,
+            created_by_id: ctx.user.id
+          }])
+          .select()
+          .single();
 
-        // Update ticket's updatedAt
-        await ctx.prisma.ticket.update({
-          where: { id: input.ticketId },
-          data: { updatedAt: new Date() },
-        });
+        if (messageError || !message) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to create message',
+          });
+        }
 
         // Create audit log
         await createAuditLog({
@@ -81,7 +76,7 @@ export const messageRouter = router({
           userId: ctx.user.id,
           oldData: null,
           newData: message,
-          prisma: ctx.prisma,
+          supabase: ctx.supabase
         });
 
         return message;
@@ -101,36 +96,27 @@ export const messageRouter = router({
         ticketId: z.string(),
       })
     )
-    .query(async ({ input, ctx }) => {
+    .query(async ({ ctx, input }) => {
       try {
         // Check if the ticket exists and if the user has access to it
-        const ticket = await ctx.prisma.ticket.findUnique({
-          where: { id: input.ticketId },
-          select: { customerId: true },
-        });
+        const { data: ticket, error: ticketError } = await ctx.supabase
+          .from('tickets')
+          .select('customer_id')
+          .eq('id', input.ticketId)
+          .single();
 
-        if (!ticket) {
+        if (ticketError || !ticket) {
           throw new TRPCError({
             code: 'NOT_FOUND',
             message: 'Ticket not found',
           });
         }
 
-        // Get the user's role
-        const user = await ctx.prisma.user.findUnique({
-          where: { id: ctx.user.id },
-          select: { role: true },
-        });
-
-        if (!user) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'User not found',
-          });
-        }
+        // Get the user's role from context
+        const userRole = ctx.user.role;
 
         // Customers can only view messages from their own tickets
-        if (user.role === UserRole.CUSTOMER && ticket.customerId !== ctx.user.id) {
+        if (userRole === 'CUSTOMER' && ticket.customer_id !== ctx.user.id) {
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'You can only view messages from your own tickets',
@@ -138,17 +124,36 @@ export const messageRouter = router({
         }
 
         // For customers, exclude internal messages
-        const messages = await ctx.prisma.message.findMany({
-          where: {
-            ticketId: input.ticketId,
-            ...(user.role === UserRole.CUSTOMER
-              ? { isInternal: false }
-              : {}),
-          },
-          orderBy: { createdAt: 'asc' },
-        });
+        const query = ctx.supabase
+          .from('messages')
+          .select('*')
+          .eq('ticket_id', input.ticketId)
+          .order('created_at', { ascending: true });
 
-        return messages;
+        // Add internal message filter for customers
+        if (userRole === 'CUSTOMER') {
+          query.eq('is_internal', false);
+        }
+
+        const { data: messages, error: messagesError } = await query;
+
+        if (messagesError) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to fetch messages',
+          });
+        }
+
+        // Transform the messages to camelCase and proper types
+        return (messages || []).map(message => ({
+          id: message.id,
+          content: message.content,
+          contentHtml: message.content_html,
+          ticketId: message.ticket_id,
+          isInternal: message.is_internal,
+          createdAt: new Date(message.created_at).toISOString(),
+          updatedAt: new Date(message.updated_at).toISOString()
+        }));
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -157,5 +162,5 @@ export const messageRouter = router({
           cause: error,
         });
       }
-    }),
+    })
 }); 

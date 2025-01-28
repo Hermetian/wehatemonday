@@ -1,31 +1,14 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../trpc";
-import { UserRole } from "@prisma/client";
 import { createAuditLog } from "@/app/lib/utils/audit-logger";
-import { supabase } from "@/app/lib/auth/supabase";
-
-const TeamMemberOutput = {
-  id: true,
-  name: true,
-  email: true,
-  role: true,
-} as const;
-
-const TeamOutput = {
-  id: true,
-  name: true,
-  tags: true,
-  members: {
-    select: TeamMemberOutput,
-  }
-} as const;
+import { user_role } from '@/app/types/auth';
 
 export type TeamMember = {
   id: string;
   name: string | null;
   email: string;
-  role: UserRole;
+  role: user_role;
 };
 
 export type Team = {
@@ -35,49 +18,403 @@ export type Team = {
   members: TeamMember[];
 };
 
+type TeamMemberWithUser = {
+  team_id: string;
+  user: {
+    id: string;
+    name: string | null;
+    email: string;
+    role: user_role;
+  };
+};
+
 export const teamRouter = router({
-  create: protectedProcedure
-    .input(z.object({
-      name: z.string().min(1),
-      tags: z.array(z.string()).optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      if (ctx.user?.role !== UserRole.MANAGER && ctx.user?.role !== UserRole.ADMIN) {
+  simpleTest: protectedProcedure
+    .query(async ({ ctx }) => {
+      try {
+        console.log('Simple test: Starting');
+        console.log('Simple test: Context:', {
+          hasUser: !!ctx.user,
+          userEmail: ctx.user?.email,
+          userRole: ctx.user?.role,
+          hasSupabase: !!ctx.supabase
+        });
+
+        if (!ctx.user) {
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'No user in context',
+          });
+        }
+
+        return {
+          ok: true,
+          message: "Hello from TRPC",
+          timestamp: new Date().toISOString(),
+          user: {
+            email: ctx.user.email,
+            role: ctx.user.role
+          }
+        };
+      } catch (error) {
+        console.error('Simple test error:', error);
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only managers and admins can create teams",
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Unknown error in simple test',
+          cause: error,
         });
       }
+    }),
 
-      const team = await ctx.prisma.team.create({
-        data: {
-          name: input.name,
-          tags: input.tags || [],
-          members: {
-            connect: { id: ctx.user.id },
-          },
-        },
-        select: TeamOutput,
-      });
+  testUsers: protectedProcedure
+    .query(async ({ ctx }) => {
+      try {
+        console.log('Test procedure: Starting');
+        console.log('Test procedure: Context:', {
+          hasUser: !!ctx.user,
+          userEmail: ctx.user?.email,
+          userRole: ctx.user?.role,
+          hasSupabase: !!ctx.supabase
+        });
+        
+        if (!ctx.supabase) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "No Supabase client in context",
+          });
+        }
 
-      return team;
+        if (!ctx.user) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "No user in context",
+          });
+        }
+
+        console.log('Test procedure: Fetching users');
+        const { data: users, error, status, statusText } = await ctx.supabase
+          .from('users')
+          .select('id, email, name, role')
+          .limit(10);
+
+        console.log('Test procedure: Query result:', {
+          hasData: !!users,
+          dataLength: users?.length,
+          hasError: !!error,
+          status,
+          statusText
+        });
+
+        if (error) {
+          console.error('Test procedure error:', error);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `Test failed: ${error.message}`,
+            cause: error,
+          });
+        }
+
+        if (!users) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "No data returned from query",
+          });
+        }
+
+        console.log('Test procedure success, found users:', users.length);
+        return {
+          success: true,
+          users,
+          currentUserRole: ctx.user.role,
+          debug: {
+            userEmail: ctx.user.email,
+            timestamp: new Date().toISOString()
+          }
+        };
+      } catch (error) {
+        console.error('Test procedure caught error:', error);
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Unknown error occurred",
+          cause: error,
+        });
+      }
+    }),
+
+  create: protectedProcedure
+    .input(
+      z.object({
+        name: z.string(),
+        tags: z.array(z.string()).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        if (ctx.user?.role !== 'ADMIN' && ctx.user?.role !== 'MANAGER') {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only managers and admins can create teams",
+          });
+        }
+
+        const { data: team, error } = await ctx.supabase
+          .from('teams')
+          .insert([{
+            name: input.name,
+            tags: input.tags || []
+          }])
+          .select()
+          .single();
+
+        if (error) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to create team",
+            cause: error,
+          });
+        }
+
+        await createAuditLog({
+          action: 'CREATE',
+          entity: 'TEAM',
+          entityId: team.id,
+          userId: ctx.user.id,
+          oldData: null,
+          newData: team,
+          supabase: ctx.supabase
+        });
+
+        return team;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create team",
+          cause: error,
+        });
+      }
+    }),
+
+  update: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        if (ctx.user?.role !== 'MANAGER' && ctx.user?.role !== 'ADMIN') {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only managers and admins can update teams",
+          });
+        }
+
+        const { data: existingTeam, error: fetchError } = await ctx.supabase
+          .from('teams')
+          .select()
+          .eq('id', input.id)
+          .single();
+
+        if (fetchError || !existingTeam) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Team not found",
+          });
+        }
+
+        const { data: updatedTeam, error: updateError } = await ctx.supabase
+          .from('teams')
+          .update({
+            name: input.name,
+            tags: input.tags
+          })
+          .eq('id', input.id)
+          .select()
+          .single();
+
+        if (updateError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to update team",
+            cause: updateError,
+          });
+        }
+
+        await createAuditLog({
+          action: 'UPDATE',
+          entity: 'TEAM',
+          entityId: input.id,
+          userId: ctx.user.id,
+          oldData: existingTeam,
+          newData: updatedTeam,
+          supabase: ctx.supabase
+        });
+
+        return updatedTeam;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to update team",
+          cause: error,
+        });
+      }
+    }),
+
+  delete: protectedProcedure
+    .input(z.string())
+    .mutation(async ({ input: teamId, ctx }) => {
+      try {
+        if (ctx.user?.role !== 'MANAGER' && ctx.user?.role !== 'ADMIN') {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only managers and admins can delete teams",
+          });
+        }
+
+        const { data: existingTeam, error: fetchError } = await ctx.supabase
+          .from('teams')
+          .select()
+          .eq('id', teamId)
+          .single();
+
+        if (fetchError || !existingTeam) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Team not found",
+          });
+        }
+
+        const { error: deleteError } = await ctx.supabase
+          .from('teams')
+          .delete()
+          .eq('id', teamId);
+
+        if (deleteError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to delete team",
+            cause: deleteError,
+          });
+        }
+
+        await createAuditLog({
+          action: 'DELETE',
+          entity: 'TEAM',
+          entityId: teamId,
+          userId: ctx.user.id,
+          oldData: existingTeam,
+          newData: {},
+          supabase: ctx.supabase
+        });
+
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to delete team",
+          cause: error,
+        });
+      }
     }),
 
   list: protectedProcedure
     .query(async ({ ctx }) => {
-      if (ctx.user?.role !== UserRole.MANAGER && ctx.user?.role !== UserRole.ADMIN) {
+      try {
+        // First, get all teams
+        const { data: teams, error: teamsError } = await ctx.supabase
+          .from('teams')
+          .select(`
+            id,
+            name,
+            tags
+          `);
+
+        if (teamsError) {
+          console.error('Error fetching teams:', teamsError);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to fetch teams",
+            cause: teamsError,
+          });
+        }
+
+        if (!teams) {
+          return [];
+        }
+
+        // Then, get team members for all teams
+        const teamIds = teams.map(team => team.id);
+        const { data: teamMembers, error: membersError } = await ctx.supabase
+          .from('team_members')
+          .select(`
+            team_id,
+            user:users (
+              id,
+              name,
+              email,
+              role
+            )
+          `)
+          .in('team_id', teamIds);
+
+        if (membersError) {
+          console.error('Error fetching team members:', membersError);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to fetch team members",
+            cause: membersError,
+          });
+        }
+
+        // Group members by team
+        const membersByTeam = new Map<string, TeamMember[]>();
+        if (teamMembers) {
+          for (const member of teamMembers as unknown as TeamMemberWithUser[]) {
+            if (!member.user || typeof member.user !== 'object') continue;
+            
+            const teamId = member.team_id;
+            if (!membersByTeam.has(teamId)) {
+              membersByTeam.set(teamId, []);
+            }
+            
+            membersByTeam.get(teamId)?.push({
+              id: member.user.id,
+              name: member.user.name,
+              email: member.user.email,
+              role: member.user.role
+            });
+          }
+        }
+
+        // Transform the data to match the expected Team type
+        return teams.map(team => ({
+          id: team.id,
+          name: team.name,
+          tags: team.tags || [],
+          members: (membersByTeam.get(team.id) || [])
+            .sort((a, b) => {
+              // Sort by role priority: ADMIN > MANAGER > AGENT > CUSTOMER
+              const roleOrder = { ADMIN: 0, MANAGER: 1, AGENT: 2, CUSTOMER: 3 };
+              return (roleOrder[a.role] || 4) - (roleOrder[b.role] || 4);
+            })
+        }));
+
+      } catch (error) {
+        console.error('Error in team.list:', error);
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only managers and admins can view teams",
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to fetch teams",
+          cause: error,
         });
       }
-
-      const teams = await ctx.prisma.team.findMany({
-        take: 50, // Limit to prevent deep type instantiation
-        select: TeamOutput,
-      });
-
-      return teams;
     }),
 
   getMembers: protectedProcedure
@@ -85,31 +422,50 @@ export const teamRouter = router({
       teamId: z.string(),
     }))
     .query(async ({ ctx, input }) => {
-      if (ctx.user?.role !== UserRole.MANAGER && ctx.user?.role !== UserRole.ADMIN) {
+      try {
+        if (ctx.user?.role !== 'MANAGER' && ctx.user?.role !== 'ADMIN') {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only managers and admins can view team members",
+          });
+        }
+
+        const { data: members, error } = await ctx.supabase
+          .from('team_members')
+          .select(`
+            team_id,
+            user:users (
+              id,
+              name,
+              email,
+              role
+            )
+          `)
+          .eq('team_id', input.teamId)
+          .order('user(role)', { ascending: true })
+          .limit(50);
+
+        if (error) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to fetch team members",
+            cause: error,
+          });
+        }
+
+        if (!members) {
+          return [];
+        }
+
+        return members;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only managers and admins can view team members",
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to fetch team members",
+          cause: error,
         });
       }
-
-      const team = await ctx.prisma.team.findUnique({
-        where: { id: input.teamId },
-        select: {
-          members: {
-            select: TeamMemberOutput,
-            take: 50, // Limit to prevent deep type instantiation
-          }
-        },
-      });
-
-      if (!team) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Team not found",
-        });
-      }
-
-      return team.members;
     }),
 
   addMember: protectedProcedure
@@ -118,24 +474,55 @@ export const teamRouter = router({
       userId: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user?.role !== UserRole.MANAGER && ctx.user?.role !== UserRole.ADMIN) {
+      try {
+        if (ctx.user?.role !== 'MANAGER' && ctx.user?.role !== 'ADMIN') {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only managers and admins can add team members",
+          });
+        }
+
+        // Add team member
+        const { data: teamMember, error } = await ctx.supabase
+          .from('team_members')
+          .insert([{
+            team_id: input.teamId,
+            user_id: input.userId,
+            created_at: new Date().toISOString(),
+          }])
+          .select(`
+            id,
+            team_id,
+            user_id,
+            role,
+            created_at,
+            updated_at,
+            user:user_id(
+              id,
+              name,
+              email,
+              role
+            )
+          `)
+          .single();
+
+        if (error) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to add team member",
+            cause: error,
+          });
+        }
+
+        return teamMember;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only managers and admins can add team members",
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to add team member",
+          cause: error,
         });
       }
-
-      const team = await ctx.prisma.team.update({
-        where: { id: input.teamId },
-        data: {
-          members: {
-            connect: { id: input.userId },
-          },
-        },
-        select: TeamOutput,
-      });
-
-      return team;
     }),
 
   removeMember: protectedProcedure
@@ -144,50 +531,39 @@ export const teamRouter = router({
       userId: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user?.role !== UserRole.MANAGER && ctx.user?.role !== UserRole.ADMIN) {
+      try {
+        if (ctx.user?.role !== 'MANAGER' && ctx.user?.role !== 'ADMIN') {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only managers and admins can remove team members",
+          });
+        }
+
+        // Remove team member
+        const { data: teamMember, error } = await ctx.supabase
+          .from('team_members')
+          .delete()
+          .match({ team_id: input.teamId, user_id: input.userId })
+          .select()
+          .single();
+
+        if (error) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to remove team member",
+            cause: error,
+          });
+        }
+
+        return teamMember;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only managers and admins can remove team members",
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to remove team member",
+          cause: error,
         });
       }
-
-      const team = await ctx.prisma.team.update({
-        where: { id: input.teamId },
-        data: {
-          members: {
-            disconnect: { id: input.userId },
-          },
-        },
-        select: TeamOutput,
-      });
-
-      return team;
-    }),
-
-  update: protectedProcedure
-    .input(z.object({
-      id: z.string(),
-      name: z.string().min(1).optional(),
-      tags: z.array(z.string()).optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      if (ctx.user?.role !== UserRole.MANAGER && ctx.user?.role !== UserRole.ADMIN) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only managers and admins can update teams",
-        });
-      }
-
-      const team = await ctx.prisma.team.update({
-        where: { id: input.id },
-        data: {
-          ...(input.name && { name: input.name }),
-          ...(input.tags && { tags: input.tags }),
-        },
-        select: TeamOutput,
-      });
-
-      return team;
     }),
 
   addTags: protectedProcedure
@@ -196,24 +572,58 @@ export const teamRouter = router({
       tags: z.array(z.string()),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user?.role !== UserRole.MANAGER && ctx.user?.role !== UserRole.ADMIN) {
+      try {
+        if (ctx.user?.role !== 'MANAGER' && ctx.user?.role !== 'ADMIN') {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only managers and admins can add team tags",
+          });
+        }
+
+        // Get current team tags
+        const { data: team, error: fetchError } = await ctx.supabase
+          .from('teams')
+          .select('tags')
+          .eq('id', input.teamId)
+          .single();
+
+        if (fetchError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to fetch team",
+            cause: fetchError,
+          });
+        }
+
+        // Combine existing and new tags, removing duplicates
+        const currentTags = team?.tags || [];
+        const newTags = [...new Set([...currentTags, ...input.tags])];
+
+        // Update team tags
+        const { data: updatedTeam, error: updateError } = await ctx.supabase
+          .from('teams')
+          .update({ tags: newTags })
+          .eq('id', input.teamId)
+          .select()
+          .single();
+
+        if (updateError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to update team tags",
+            cause: updateError,
+          });
+        }
+
+        return updatedTeam;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only managers and admins can add team tags",
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to add team tags",
+          cause: error,
         });
       }
-
-      const team = await ctx.prisma.team.update({
-        where: { id: input.teamId },
-        data: {
-          tags: {
-            push: input.tags,
-          },
-        },
-        select: TeamOutput,
-      });
-
-      return team;
     }),
 
   removeTags: protectedProcedure
@@ -222,126 +632,91 @@ export const teamRouter = router({
       tags: z.array(z.string()),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user?.role !== UserRole.MANAGER && ctx.user?.role !== UserRole.ADMIN) {
+      try {
+        if (ctx.user?.role !== 'MANAGER' && ctx.user?.role !== 'ADMIN') {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only managers and admins can remove team tags",
+          });
+        }
+
+        // Get current team tags
+        const { data: team, error: fetchError } = await ctx.supabase
+          .from('teams')
+          .select('tags')
+          .eq('id', input.teamId)
+          .single();
+
+        if (fetchError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to fetch team",
+            cause: fetchError,
+          });
+        }
+
+        // Filter out tags to remove
+        const updatedTags = (team?.tags || []).filter((tag: string) => !input.tags.includes(tag));
+
+        // Update team tags
+        const { data: updatedTeam, error: updateError } = await ctx.supabase
+          .from('teams')
+          .update({ tags: updatedTags })
+          .eq('id', input.teamId)
+          .select()
+          .single();
+
+        if (updateError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to update team tags",
+            cause: updateError,
+          });
+        }
+
+        return updatedTeam;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only managers and admins can remove team tags",
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to remove team tags",
+          cause: error,
         });
       }
-
-      const team = await ctx.prisma.team.findUnique({
-        where: { id: input.teamId },
-        select: { tags: true },
-      }) as { tags: string[] } | null;
-
-      if (!team) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Team not found",
-        });
-      }
-
-      const updatedTags = team.tags.filter((tag: string) => !input.tags.includes(tag));
-
-      const updatedTeam = await ctx.prisma.team.update({
-        where: { id: input.teamId },
-        data: {
-          tags: updatedTags,
-        },
-        select: TeamOutput,
-      });
-
-      return updatedTeam;
-    }),
-
-  delete: protectedProcedure
-    .input(z.object({
-      teamId: z.string(),
-      password: z.string(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      if (ctx.user?.role !== UserRole.MANAGER && ctx.user?.role !== UserRole.ADMIN) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only managers and admins can delete teams",
-        });
-      }
-
-      // Verify password
-      const { error } = await supabase.auth.signInWithPassword({
-        email: ctx.user.email!,
-        password: input.password,
-      });
-
-      if (error) {
-        throw new TRPCError({
-          code: "UNAUTHORIZED",
-          message: "Invalid password",
-        });
-      }
-
-      // Get team data for audit log
-      const team = await ctx.prisma.team.findUnique({
-        where: { id: input.teamId },
-        include: {
-          members: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              role: true,
-            },
-          },
-        },
-      });
-
-      if (!team) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Team not found",
-        });
-      }
-
-      // Delete team
-      await ctx.prisma.team.delete({
-        where: { id: input.teamId },
-      });
-
-      // Create audit log
-      await createAuditLog({
-        action: "DELETE",
-        entity: "TEAM",
-        entityId: input.teamId,
-        userId: ctx.user.id,
-        oldData: team,
-        newData: {},
-        prisma: ctx.prisma,
-      });
-
-      return { success: true };
     }),
 
   getUserTeamTags: protectedProcedure
     .query(async ({ ctx }) => {
-      const teams = await ctx.prisma.team.findMany({
-        where: {
-          members: {
-            some: {
-              id: ctx.user.id
-            }
-          }
-        },
-        select: {
-          tags: true
+      try {
+        const { data: teams, error } = await ctx.supabase
+          .from('teams')
+          .select('tags')
+          .eq('created_by_id', ctx.user.id);
+
+        if (error) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to fetch team tags",
+            cause: error,
+          });
         }
-      });
 
-      // Get unique tags from all teams the user is a member of
-      const uniqueTags = new Set<string>();
-      teams.forEach(team => {
-        team.tags.forEach(tag => uniqueTags.add(tag));
-      });
+        // Get unique tags from all teams
+        const tagSet = new Set<string>();
+        teams?.forEach((team: { tags: string[] | null }) => {
+          if (Array.isArray(team.tags)) {
+            team.tags.forEach((tag: string) => tag && tagSet.add(tag));
+          }
+        });
 
-      return Array.from(uniqueTags).sort();
+        return Array.from(tagSet).sort();
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to fetch team tags",
+          cause: error,
+        });
+      }
     }),
 }); 

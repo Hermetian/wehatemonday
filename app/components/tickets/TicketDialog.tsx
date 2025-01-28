@@ -19,7 +19,6 @@ import { Badge } from '@/app/components/ui/badge';
 import { X } from 'lucide-react';
 import { useAuth } from '@/app/lib/auth/AuthContext';
 import { trpc } from '@/app/lib/trpc/client';
-import { UserRole } from '@prisma/client';
 import { TicketStatus, TicketPriority } from '@/app/types/tickets';
 import { TicketMessages } from './TicketMessages';
 import { StatusBadge } from '@/app/components/ui/status-badge';
@@ -35,8 +34,8 @@ interface TicketDialogProps {
   onTicketUpdated: () => void;
 }
 
-const STAFF_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.AGENT] as const;
-const ASSIGNMENT_ROLES = [UserRole.ADMIN, UserRole.MANAGER] as const;
+const STAFF_ROLES = ['ADMIN', 'MANAGER', 'AGENT'] as const;
+const ASSIGNMENT_ROLES = ['ADMIN', 'MANAGER'] as const;
 
 type UpdateTicketInput = inferRouterInputs<AppRouter>['ticket']['update'];
 
@@ -268,7 +267,7 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                       <SelectItem key={user.id} value={user.id} className="text-gray-900 hover:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900">
                         <div className="flex items-center gap-2">
                           <span>{user.name || user.email}</span>
-                          <StatusBadge role={user.isCustomer ? UserRole.CUSTOMER : user.role}>
+                          <StatusBadge role={user.isCustomer ? 'CUSTOMER' : user.role}>
                             {user.isCustomer ? 'CUSTOMER' : user.role}
                           </StatusBadge>
                         </div>
@@ -304,7 +303,7 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
           {/* Messages Section */}
           <div className="border-t border-gray-200 pt-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Messages</h3>
-            <div className="text-gray-900">
+            <div className="text-gray-900 [&_.bg-yellow-50]:!bg-yellow-50 [&_.border-yellow-200]:!border-yellow-200 [&_.text-yellow-600]:!text-yellow-600">
               <TicketMessages ticketId={ticket.id} />
             </div>
           </div>

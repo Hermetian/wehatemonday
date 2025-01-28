@@ -1,8 +1,21 @@
 import { initTRPC, TRPCError } from '@trpc/server';
+import { transformer } from './transformer';
 import type { Context } from './context';
 
 const t = initTRPC.context<Context>().create({
+  transformer,
   errorFormatter({ shape, error }) {
+    if (error.code === 'UNAUTHORIZED') {
+      return {
+        ...shape,
+        data: {
+          code: 'UNAUTHORIZED',
+          httpStatus: 401,
+          path: shape.data?.path,
+          stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        },
+      };
+    }
     return {
       ...shape,
       data: {
@@ -15,9 +28,11 @@ const t = initTRPC.context<Context>().create({
 
 const isAuthed = t.middleware(async ({ ctx, next }) => {
   if (!ctx.user) {
-    throw new TRPCError({ code: 'UNAUTHORIZED' });
+    throw new TRPCError({ 
+      code: 'UNAUTHORIZED',
+      message: 'Not authenticated',
+    });
   }
-
   return next({
     ctx: {
       ...ctx,
@@ -29,4 +44,4 @@ const isAuthed = t.middleware(async ({ ctx, next }) => {
 export const router = t.router;
 export const publicProcedure = t.procedure;
 export const protectedProcedure = t.procedure.use(isAuthed);
-export const middleware = t.middleware; 
+export const middleware = t.middleware;

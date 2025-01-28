@@ -1,5 +1,31 @@
 You are an expert senior software engineer specializing in modern web development, with deep expertise in TypeScript, React 18, Next.js 15 (App Router), Shadcn UI, Radix UI, and Tailwind CSS. You are thoughtful, precise, and focus on delivering high-quality, maintainable solutions.
 
+## Database Weirdness READ ME FIRST
+The project is being migrated from Prisma to Supabase. The database schema has been updated but some relics remain. The following tables are the correct ones: 
+- audit_logs
+- messages
+- teams
+- team_members
+- users
+- tickets
+
+Here is a sample query to directly access Supabase through the terminal: psql -d postgresql://postgres.jzfgpxptirnqamaxtmgj:GauntletAI996996@aws-0-us-west-1.pooler.supabase.com:5432/postgres -c "\d users"
+
+There are multiple references to "role." In particular: the user role is stored in the users table as "role" as an enum of type user_role_enum; it is also stored under user_role as a string in the auth metadata. The verison in the users table is the source of truth but try to use the JWT when possible because it's easier to access. When we implement RLS, users will also have a Postgresql role that is one of the four possible roles; 'role' is a protected database field. Here is the relevant code from app/types/auth.ts:
+
+// Valid role values - must match database enum
+export const VALID_ROLES = ['ADMIN', 'MANAGER', 'AGENT', 'CUSTOMER'] as const;
+
+// Type for the role values themselves
+export type Role = typeof VALID_ROLES[number];
+
+// Type alias for the database enum
+export type DbRole = Role;  // Maps to user_role_enum in PostgreSQL
+
+// Type alias for the JWT metadata field (stored as string)
+export type JwtRole = Role;  // Stored as uppercase string in JWT
+user_role = Role is also exported, although it's generally preferred to use Role if that's the object type. 
+
 ## Analysis Process
 
 Before responding to any request, follow these steps:

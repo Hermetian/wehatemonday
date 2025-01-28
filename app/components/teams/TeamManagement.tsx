@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/app/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/app/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/app/components/ui/dialog";
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
 import { trpc } from "@/app/lib/trpc/client";
-import { UserRole } from "@prisma/client";
+import { Role, VALID_ROLES } from "@/app/types/auth";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/app/components/ui/alert-dialog";
 
 // Simplified types to avoid deep type instantiation
@@ -15,7 +15,7 @@ type BasicUser = {
   id: string;
   name: string | null;
   email: string;
-  role: UserRole;
+  role: Role;
 };
 
 type BasicTeam = {
@@ -27,8 +27,9 @@ type BasicTeam = {
 
 export function TeamManagement() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-  const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.AGENT);
+  const [selectedRole, setSelectedRole] = useState<Role>(VALID_ROLES[2]);
   const [searchQuery, setSearchQuery] = useState("");
   const [teamName, setTeamName] = useState("");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -37,13 +38,29 @@ export function TeamManagement() {
   const [newTag, setNewTag] = useState("");
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const tagInputRef = useRef<HTMLInputElement>(null);
+  const tagSuggestionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        tagSuggestionsRef.current &&
+        !tagSuggestionsRef.current.contains(event.target as Node) &&
+        !tagInputRef.current?.contains(event.target as Node)
+      ) {
+        setShowTagSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const utils = trpc.useContext();
   const { data: teams, isLoading: loadingTeams } = trpc.team.list.useQuery() as { data: BasicTeam[] | undefined, isLoading: boolean };
   const { data: teamMembers, isLoading: loadingMembers } = trpc.team.getMembers.useQuery(
     { teamId: selectedTeamId! },
     { enabled: !!selectedTeamId }
-  ) as { data: BasicUser[] | undefined, isLoading: boolean };
+  ) as { data: { user: BasicUser }[] | undefined, isLoading: boolean };
   const { data: eligibleUsers, isLoading: loadingUsers } = trpc.user.listByRole.useQuery(
     { role: selectedRole, searchQuery },
     { enabled: !!selectedTeamId }
@@ -131,7 +148,7 @@ export function TeamManagement() {
           if (team.id === teamId) {
             return {
               ...team,
-              tags: team.tags.filter(t => !tags.includes(t))
+              tags: team.tags.filter((tag: string) => !tags.includes(tag))
             };
           }
           return team;
@@ -168,8 +185,8 @@ export function TeamManagement() {
 
   const handleDeleteTeam = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTeamId || !deletePassword) return;
-    await deleteTeam.mutate({ teamId: selectedTeamId, password: deletePassword });
+    if (!selectedTeamId) return;
+    await deleteTeam.mutate(selectedTeamId);
   };
 
   const handleAddTag = async (tag: string) => {
@@ -189,7 +206,7 @@ export function TeamManagement() {
 
   // Filter out current team members from eligible users
   const filteredEligibleUsers = eligibleUsers?.filter(user => 
-    !teamMembers?.some(member => member.id === user.id)
+    !teamMembers?.some(member => member.user.id === user.id)
   );
 
   // Filter available tags based on input
@@ -287,7 +304,7 @@ export function TeamManagement() {
         <div className="space-y-4">
           {teams.map((team) => (
             <div
-              key={team.id}
+              key={`team-${team.id}`}
               className="p-4 border rounded-lg shadow-sm hover:shadow-md transition-shadow bg-background"
             >
               <div className="flex items-center justify-between">
@@ -297,7 +314,13 @@ export function TeamManagement() {
                     {team.members.length} members
                   </p>
                 </div>
-                <Dialog onOpenChange={(open) => !open && setSelectedTeamId(null)}>
+                <Dialog 
+                  open={isTeamDialogOpen && selectedTeamId === team.id} 
+                  onOpenChange={(open) => {
+                    setIsTeamDialogOpen(open);
+                    if (!open) setSelectedTeamId(null);
+                  }}
+                >
                   <DialogTrigger asChild>
                     <Button 
                       variant="outline"
@@ -309,6 +332,9 @@ export function TeamManagement() {
                   <DialogContent className="max-w-2xl bg-[#0A1A2F] border-[#1E2D3D]">
                     <DialogHeader>
                       <DialogTitle className="text-foreground">Manage Team - {team.name}</DialogTitle>
+                      <DialogDescription className="text-muted-foreground">
+                        Manage team members and settings
+                      </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-6">
                       <div className="space-y-4">
@@ -318,7 +344,7 @@ export function TeamManagement() {
                         <div className="flex flex-wrap gap-2">
                           {team.tags?.map((tag) => (
                             <div 
-                              key={tag}
+                              key={`team-tag-${team.id}-${tag}`}
                               className="flex items-center gap-1 px-2 py-1 bg-[#1E2D3D] rounded-full text-sm"
                             >
                               <span className="text-foreground">{tag}</span>
@@ -349,12 +375,13 @@ export function TeamManagement() {
                             />
                             {showTagSuggestions && filteredTags.length > 0 && (
                               <div 
+                                ref={tagSuggestionsRef}
                                 id="tag-suggestions"
                                 className="absolute z-50 w-full mt-1 bg-[#1E2D3D] border border-[#2E3D4D] rounded-md shadow-lg overflow-hidden"
                               >
                                 {filteredTags.map((tag) => (
                                   <button
-                                    key={tag}
+                                    key={`tag-suggestion-${tag}`}
                                     onClick={() => {
                                       handleAddTag(tag);
                                       setNewTag("");
@@ -395,15 +422,18 @@ export function TeamManagement() {
                         ) : (
                           <div className="space-y-2">
                             {teamMembers?.map((member) => (
-                              <div key={member.id} className="flex items-center justify-between p-2 border border-[#1E2D3D] rounded bg-[#1E2D3D]">
+                              <div 
+                                key={`team-member-${member.user.id}`}
+                                className="flex items-center justify-between p-2 border border-[#1E2D3D] rounded bg-[#1E2D3D]"
+                              >
                                 <div>
-                                  <p className="font-medium text-foreground">{member.name}</p>
-                                  <p className="text-sm text-muted-foreground">{member.email}</p>
+                                  <p className="font-medium text-foreground">{member.user.name}</p>
+                                  <p className="text-sm text-muted-foreground">{member.user.email}</p>
                                 </div>
                                 <Button
                                   variant="destructive"
                                   size="sm"
-                                  onClick={() => handleRemoveMember(member.id)}
+                                  onClick={() => handleRemoveMember(member.user.id)}
                                   disabled={removeMember.isLoading}
                                 >
                                   Remove
@@ -418,14 +448,14 @@ export function TeamManagement() {
                         <h3 className="font-medium text-foreground">Add Team Members</h3>
                         <div className="space-y-2">
                           <Label className="text-foreground">Filter by Role</Label>
-                          <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as UserRole)}>
+                          <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as Role)}>
                             <SelectTrigger className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="bg-[#1E2D3D] border-[#1E2D3D]">
-                              <SelectItem value={UserRole.ADMIN} className="text-foreground hover:bg-[#0A1A2F]">Admin</SelectItem>
-                              <SelectItem value={UserRole.MANAGER} className="text-foreground hover:bg-[#0A1A2F]">Manager</SelectItem>
-                              <SelectItem value={UserRole.AGENT} className="text-foreground hover:bg-[#0A1A2F]">Agent</SelectItem>
+                              <SelectItem value={VALID_ROLES[0]} className="text-foreground hover:bg-[#0A1A2F]">Admin</SelectItem>
+                              <SelectItem value={VALID_ROLES[1]} className="text-foreground hover:bg-[#0A1A2F]">Manager</SelectItem>
+                              <SelectItem value={VALID_ROLES[2]} className="text-foreground hover:bg-[#0A1A2F]">Agent</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -445,7 +475,10 @@ export function TeamManagement() {
                         ) : (
                           <div className="space-y-2">
                             {filteredEligibleUsers?.map((user) => (
-                              <div key={user.id} className="flex items-center justify-between p-2 border border-[#1E2D3D] rounded bg-[#1E2D3D]">
+                              <div 
+                                key={`eligible-user-${user.id}`} 
+                                className="flex items-center justify-between p-2 border border-[#1E2D3D] rounded bg-[#1E2D3D]"
+                              >
                                 <div>
                                   <p className="font-medium text-foreground">{user.name}</p>
                                   <p className="text-sm text-muted-foreground">{user.email}</p>

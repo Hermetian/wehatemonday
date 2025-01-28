@@ -1,4 +1,6 @@
-.
+Directory structure of wehatemonday project, excluding auto-generated files like node_modules, .next, .vercel
+
+wehatemonday
 ├── README.md
 ├── app
 │   ├── api
@@ -88,6 +90,7 @@
 │   │       └── page.tsx
 │   └── types
 │       └── tickets.ts
+├── components
 ├── components.json
 ├── eslint.config.mjs
 ├── filestructure.md
@@ -106,6 +109,10 @@
 │   │   ├── 0_init
 │   │   │   ├── migration.sql
 │   │   │   └── migration.toml
+│   │   ├── 20250125202432_add_last_updated_by
+│   │   │   └── migration.sql
+│   │   ├── 20250125205118_make_last_updated_by_optional
+│   │   │   └── migration.sql
 │   │   └── migration_lock.toml
 │   └── schema.prisma
 ├── public
@@ -117,4 +124,7 @@
 ├── tailwind.config.ts
 ├── terminal
 ├── tsconfig.json
+├── tsconfig.tsbuildinfo
 └── wehatemonday.code-workspace
+
+##run tree -I 'node_modules|.next|.vercel' and copy/paste the output above

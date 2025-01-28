@@ -73,7 +73,13 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
                 <div className="space-y-1">
                   <RichTextContent content={message.contentHtml || message.content} />
                   <p className="text-xs text-gray-500">
-                    {new Date(message.createdAt).toLocaleString()}
+                    {new Date(message.createdAt).toLocaleString(undefined, {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
                     {message.isInternal && (
                       <span className="ml-2 text-yellow-600 font-medium">
                         Internal Note
