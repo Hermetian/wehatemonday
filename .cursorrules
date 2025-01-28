@@ -9,7 +9,7 @@ The project is being migrated from Prisma to Supabase. The database schema has b
 - users
 - tickets
 
-Here is a sample query to directly access Supabase through the terminal: psql -d postgresql://postgres.jzfgpxptirnqamaxtmgj:GauntletAI996996@aws-0-us-west-1.pooler.supabase.com:5432/postgres -c "\d users"
+Here is a sample query to directly access Supabase through the terminal: psql -d postgresql://postgres.jzfgpxptirnqamaxtmgj:<<<SUPABASE_PW>>>@aws-0-us-west-1.pooler.supabase.com:5432/postgres -c "\d users"
 
 There are multiple references to "role." In particular: the user role is stored in the users table as "role" as an enum of type user_role_enum; it is also stored under user_role as a string in the auth metadata. The verison in the users table is the source of truth but try to use the JWT when possible because it's easier to access. When we implement RLS, users will also have a Postgresql role that is one of the four possible roles; 'role' is a protected database field. Here is the relevant code from app/types/auth.ts:
 

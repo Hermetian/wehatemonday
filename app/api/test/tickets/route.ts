@@ -3,6 +3,7 @@ import prisma from '@/app/prisma';
 import { generateTestTicketData, TestTicketConfig } from '@/app/lib/utils/test-ticket-generator';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
 import { Prisma } from '@prisma/client';
+import { supabaseAdmin } from '@/app/lib/auth/supabase';
 
 export async function POST(request: Request) {
   try {
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
           userId: ticket.createdById,
           oldData: null,
           newData: { ...ticket, type: 'TEST_TICKET' },
-          prisma,
+          supabase: supabaseAdmin
         })
       )
     );

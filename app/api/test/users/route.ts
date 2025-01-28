@@ -3,6 +3,7 @@ import prisma from '@/app/prisma';
 import { generateTestUserData, TestUserConfig } from '@/app/lib/utils/test-data-generator';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
 import { Prisma } from '@prisma/client';
+import { supabaseAdmin } from '@/app/lib/auth/supabase';
 
 export async function POST(request: Request) {
   try {
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
           userId: user.id,
           oldData: null,
           newData: { ...user, type: 'TEST_USER' },
-          prisma,
+          supabase: supabaseAdmin
         })
       )
     );
