@@ -4,13 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/app/lib/utils/common";
 import { useAuth } from "@/app/lib/auth/AuthContext";
-import { UserRole } from "@prisma/client";
+import { Role } from "@/app/types/auth";
 
 export function Navigation() {
   const pathname = usePathname();
   const { user } = useAuth();
 
-  const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.ADMIN;
+  const isManager = (user?.role as Role) === 'MANAGER' || (user?.role as Role) === 'ADMIN';
 
   return (
     <nav className="flex space-x-4">

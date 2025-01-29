@@ -10,39 +10,63 @@ export const userRouter = router({
     .query(async ({ ctx }) => {
       if (!ctx.user) {
         return {
+          id: null,
           name: null,
           email: null,
-          role: null
+          role: null,
+          created_at: null,
+          updated_at: null,
+          cleanup_at: null,
+          metadata: null,
+          test_batch_id: null
         };
       }
 
       try {
         const { data: user, error } = await ctx.supabase
           .from('users')
-          .select('name, email, role')
+          .select('id, name, email, role, created_at, updated_at, cleanup_at, metadata, test_batch_id')
           .eq('id', ctx.user.id)
           .single();
 
         if (error) {
           console.error('Error fetching user profile:', error);
           return {
+            id: null,
             name: null,
             email: null,
-            role: null
+            role: null,
+            created_at: null,
+            updated_at: null,
+            cleanup_at: null,
+            metadata: null,
+            test_batch_id: null
           };
         }
 
         return user || {
+          id: null,
           name: null,
           email: null,
-          role: null
+          role: null,
+          created_at: null,
+          updated_at: null,
+          cleanup_at: null,
+          metadata: null,
+          test_batch_id: null
         };
       } catch (error) {
         console.error('Error in getProfile:', error);
         return {
+          id: null,
           name: null,
           email: null,
-          role: null
+          role: null,
+          created_at: null,
+          updated_at: null,
+          cleanup_at: null,
+          metadata: null,
+          test_batch_id: null
         };
       }
     }),

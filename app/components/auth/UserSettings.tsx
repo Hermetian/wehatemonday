@@ -38,14 +38,27 @@ import { useRouter } from 'next/navigation';
 import { Role, VALID_ROLES } from '@/app/types/auth';
 import { StatusBadge } from '@/app/components/ui/status-badge';
 
+// Add type for user profile data
+interface UserProfileData {
+  id: string | null;
+  name: string | null;
+  email: string | null;
+  role: Role | null;
+  created_at: string | null;
+  updated_at: string | null;
+  cleanup_at: string | null;
+  metadata: Record<string, unknown> | null;
+  test_batch_id: string | null;
+}
+
 export function UserSettings() {
   const router = useRouter();
   const { user, role, refreshSession, signOut } = useAuth();
 
-  // Get user profile from Prisma
-  const { data: userProfile } = trpc.user.getProfile.useQuery(undefined, {
-    enabled: !!user,
-  });
+  // Get user profile from database
+  const { data: user_profile } = trpc.user.getProfile.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  }) as { data: UserProfileData | undefined };
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLogoutOpen, setIsLogoutOpen] = useState(false);
@@ -81,11 +94,11 @@ export function UserSettings() {
 
   // Update initial values when data changes
   useEffect(() => {
-    if (user && userProfile) {
-      setName(userProfile.name || ''); // Use Prisma data for name
+    if (user && user_profile) {
+      setName(user_profile.name || ''); // Use database data for name
       setEmail(user.email || ''); // Use Supabase data for email
     }
-  }, [user, userProfile]);
+  }, [user, user_profile]);
 
   // Update role when auth context role changes
   useEffect(() => {
@@ -153,7 +166,7 @@ export function UserSettings() {
         }
       }
 
-      // Update password first if provided (Supabase only)
+      // Update password first if provided (Supabase auth)
       if (showPasswordChange && newPassword) {
         hasChanges = true;
         const { error: passwordError } = await supabase.auth.updateUser({
@@ -164,13 +177,13 @@ export function UserSettings() {
           toast.error(`Failed to update password: ${passwordError.message}`);
           setIsLoading(false);
           return;
-      }
+        }
 
         toast.success('Password updated successfully');
       }
 
-      // Update name if changed (Prisma only)
-      if (name !== userProfile?.name) {
+      // Update name if changed (database only)
+      if (name !== user_profile?.name) {
         hasChanges = true;
         try {
           await updateProfile.mutateAsync({ name });
@@ -182,7 +195,7 @@ export function UserSettings() {
         }
       }
 
-      // Update role if changed (Prisma only)
+      // Update role if changed (database and auth)
       if (pendingRole !== currentRole) {
         hasChanges = true;
         try {
@@ -199,7 +212,7 @@ export function UserSettings() {
         }
       }
 
-      // Update email if changed (Supabase first, then Prisma)
+      // Update email if changed (Supabase auth first, then database)
       if (hasEmailChanged) {
         hasChanges = true;
         const { error: emailError } = await supabase.auth.updateUser({
@@ -212,7 +225,7 @@ export function UserSettings() {
           return;
         }
         
-        // Update Prisma after successful Supabase update
+        // Update database after successful auth update
         await updateProfile.mutateAsync({ email });
         toast.success('Email update confirmation sent. Please check your inbox.');
       }
@@ -246,8 +259,8 @@ export function UserSettings() {
       toast.error(error instanceof Error ? error.message : 'Failed to update profile');
       
       // Reset form with original values
-      if (userProfile) {
-        setName(userProfile.name || '');
+      if (user_profile) {
+        setName(user_profile.name || '');
       }
       if (user) {
         setEmail(user.email || '');
