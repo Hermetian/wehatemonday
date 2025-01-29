@@ -3,12 +3,27 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
   console.log('Middleware: Processing request to', request.url);
+
+  // Early return for public routes, auth callback, and static assets
+  const isPublicAccess = request.nextUrl.pathname === '/' || 
+                        request.nextUrl.pathname.startsWith('/_next') ||
+                        request.nextUrl.pathname.startsWith('/public') ||
+                        request.nextUrl.pathname === '/favicon.ico'
+
+  const isAuthCallback = request.nextUrl.searchParams.has('code') || 
+                        request.nextUrl.searchParams.has('error') ||
+                        request.nextUrl.pathname === '/auth/callback'
+
+  const isAuthPage = request.nextUrl.pathname.startsWith('/auth/')
+  const isApiRequest = request.nextUrl.pathname.startsWith('/api/')
   
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  })
+  // Don't process auth checks for these routes
+  if (isPublicAccess || isAuthCallback || isApiRequest) {
+    console.log('Middleware: Skipping auth check for exempt route');
+    return NextResponse.next()
+  }
+  
+  let response = NextResponse.next()
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,114 +31,83 @@ export async function middleware(request: NextRequest) {
     {
       cookies: {
         get(name: string) {
-          const cookie = request.cookies.get(name)?.value
-          console.log(`Middleware: Getting cookie ${name}:`, cookie ? 'present' : 'missing')
-          return cookie
+          return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: CookieOptions) {
-          console.log(`Middleware: Setting cookie ${name}`)
-          // Ensure cookies are set with proper security options
+          // Let Supabase handle cookie names and options
           response.cookies.set({
             name,
             value,
             ...options,
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            path: '/',
-            maxAge: 60 * 60 * 24 * 7 // 7 days
           })
         },
         remove(name: string, options: CookieOptions) {
-          console.log(`Middleware: Removing cookie ${name}`)
           response.cookies.set({
             name,
             value: '',
             ...options,
-            httpOnly: true,
             expires: new Date(0),
-            path: '/'
           })
         },
       },
     }
   )
 
-  // Get the session and refresh if needed
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-  
-  if (sessionError) {
-    console.error('Middleware: Session error:', sessionError)
+  try {
+    // Get the session and refresh if needed
+    console.log('Middleware: Cookie header:', request.headers.get('cookie'));
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    console.log('Middleware: Session state:', {
+      hasSession: !!session,
+      hasError: !!sessionError,
+      userId: session?.user?.id,
+      userEmail: session?.user?.email,
+      cookieNames: request.cookies.getAll().map(c => c.name)
+    });
+    
+    if (sessionError) {
+      console.error('Middleware: Session error:', sessionError);
+      throw sessionError
+    }
+
+    // If we have a session and we're on the auth page, redirect to homepage
+    if (session && isAuthPage) {
+      const url = new URL(request.url)
+      // Don't redirect if we just signed out
+      const justSignedOut = url.searchParams.get('signedOut') === 'true'
+      if (!justSignedOut) {
+        console.log('Middleware: Authenticated user on auth page, redirecting to homepage')
+        return NextResponse.redirect(new URL('/homepage', request.url))
+      }
+    }
+
+    // If we don't have a session and we're not on the auth page, redirect to signin
+    if (!session && !isAuthPage) {
+      console.log('Middleware: Unauthenticated user on protected route, redirecting to signin')
+      return NextResponse.redirect(new URL('/auth/signin', request.url))
+    }
+
+    // If we have a session, set the Authorization header
+    if (session?.access_token) {
+      const requestHeaders = new Headers(request.headers)
+      requestHeaders.set('Authorization', `Bearer ${session.access_token}`)
+      response = NextResponse.next({
+        request: {
+          headers: requestHeaders,
+        },
+      })
+    }
+
+    return response
+  } catch (error) {
+    console.error('Middleware: Auth error:', error)
+    // On any auth error, redirect to signin
+    return NextResponse.redirect(new URL('/auth/signin', request.url))
   }
-
-  // Log session details
-  console.log('Middleware: Session check result:', {
-    hasSession: !!session,
-    userEmail: session?.user?.email,
-    error: sessionError?.message
-  })
-
-  const isAuthPage = request.nextUrl.pathname.startsWith('/auth/')
-  const isApiRequest = request.nextUrl.pathname.startsWith('/api/')
-  const isSignInPage = request.nextUrl.pathname === '/auth/signin'
-  const hasAuthInProgress = request.cookies.get('auth-in-progress')?.value === 'true'
-
-  console.log('Middleware: Auth state:', {
-    isAuthPage,
-    isApiRequest,
-    isSignInPage,
-    hasAuthInProgress,
-    hasSession: !!session
-  })
-
-  // Set auth-in-progress cookie when hitting the sign-in page
-  if (isSignInPage && !hasAuthInProgress) {
-    console.log('Middleware: Setting auth-in-progress cookie')
-    response.cookies.set({
-      name: 'auth-in-progress',
-      value: 'true',
-      path: '/',
-      maxAge: 300, // 5 minutes
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax'
-    })
-  }
-
-  // If we have a session and we're on the auth page, redirect to the intended destination
-  if (session && isAuthPage) {
-    const redirectTo = request.nextUrl.searchParams.get('redirect') || '/homepage'
-    console.log('Middleware: Redirecting from auth page to:', redirectTo)
-    return NextResponse.redirect(new URL(redirectTo, request.url))
-  }
-
-  // If no session and not on auth page, redirect to sign in
-  if (!session && !isAuthPage && !isApiRequest && !hasAuthInProgress) {
-    const redirectUrl = new URL('/auth/signin', request.url)
-    redirectUrl.searchParams.set('redirect', request.nextUrl.pathname)
-    console.log('Middleware: Redirecting to sign in, no session')
-    return NextResponse.redirect(redirectUrl)
-  }
-
-  // If session exists, set both the Authorization header and the auth token cookie
-  if (session?.access_token) {
-    response.headers.set('Authorization', `Bearer ${session.access_token}`)
-    response.cookies.set({
-      name: 'sb-auth-token',
-      value: session.access_token,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7 // 7 days
-    })
-  }
-
-  return response
 }
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|public/).*)',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 }

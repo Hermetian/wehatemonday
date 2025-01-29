@@ -164,7 +164,7 @@ export const ticketRouter = router({
         }
 
         if (input.tags?.length) {
-          query = query.contains('tags', input.tags);
+          query = query.overlaps('tags', input.tags);
         }
 
         // Apply role-based filtering
@@ -383,7 +383,14 @@ export const ticketRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const { id, ...updateData } = input;
+        const { id, assignedToId, descriptionHtml, ...rest } = input;
+
+        // Convert field names to snake_case for Supabase
+        const updateData = {
+          ...rest,
+          ...(assignedToId !== undefined && { assigned_to_id: assignedToId }),
+          ...(descriptionHtml !== undefined && { description_html: descriptionHtml }),
+        };
 
         const { data: ticket, error } = await ctx.supabase
           .from('tickets')
@@ -392,7 +399,10 @@ export const ticketRouter = router({
           .select()
           .single();
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error updating ticket:', error);
+          throw error;
+        }
         if (!ticket) throw new Error('Failed to update ticket');
 
         await createAuditLog({
@@ -411,6 +421,7 @@ export const ticketRouter = router({
 
         return ticket;
       } catch (error) {
+        console.error('Error in ticket.update:', error);
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',

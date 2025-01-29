@@ -262,7 +262,7 @@ export function UserSettings() {
     try {
       setIsLogoutOpen(false); // Close the dialog first
       await signOut(); // Wait for sign out to complete
-      router.replace('/auth/signin'); // Use replace instead of push to prevent back navigation
+      router.replace('/auth/signin?signedOut=true'); // Add signedOut parameter
       router.refresh(); // Force a router refresh to ensure clean state
     } catch (error) {
       console.error('Error signing out:', error);

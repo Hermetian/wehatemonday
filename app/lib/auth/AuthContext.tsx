@@ -199,12 +199,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       console.log('AuthContext: Sign in successful, got session');
-      console.log('AuthContext: Session details:', {
-        access_token: !!data.session.access_token,
-        refresh_token: !!data.session.refresh_token,
-        expires_at: new Date(data.session.expires_at! * 1000).toISOString()
-      });
-
+      
+      // Wait for session to be fully established
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       const userRole = await updateAuthState(data.session);
       console.log('AuthContext: Updated auth state, role:', userRole);
 
@@ -213,7 +211,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Failed to get user role');
       }
 
-      console.log('AuthContext: Auth flow complete, session established');
+      // Verify session is accessible
+      const { data: { session: verifySession } } = await supabase.auth.getSession();
+      if (!verifySession) {
+        console.error('AuthContext: Session verification failed');
+        throw new Error('Session verification failed');
+      }
+
+      console.log('AuthContext: Session verified, auth flow complete');
 
     } catch (error) {
       console.error('AuthContext: Error signing in:', error);

@@ -32,6 +32,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { SortableItem } from '@/app/components/common/SortableItem';
+import { RichTextContent } from '@/app/components/ui/rich-text-editor';
 
 // Define the raw ticket type as it comes from the server
 interface RawTicket {
@@ -70,11 +71,6 @@ export interface ProcessedTicket extends Omit<RawTicket, 'status' | 'priority'> 
 
 interface TicketListProps {
   filterByUser?: string;
-}
-
-interface TicketListResponse {
-  tickets: RawTicket[];
-  nextCursor?: string;
 }
 
 const SORT_LABELS: Record<SortConfig['field'], string> = {
@@ -127,13 +123,18 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     {
       limit: 10,
       showCompleted,
-      sortConfig,
+      sortBy: sortConfig[0]?.field === 'assignedToMe' 
+        ? 'updated_at' 
+        : sortConfig[0]?.field === 'updatedAt' 
+          ? 'updated_at' 
+          : sortConfig[0]?.field,
+      sortOrder: sortConfig[0]?.direction || 'desc',
       tags: selectedTags,
       includeUntagged,
       ...(filterByUser ? { filterByUser } : {})
     },
     {
-      getNextPageParam: (lastPage: TicketListResponse) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
     }
   );
 
@@ -143,11 +144,33 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
   // Transform the data to handle string enums
   const tickets = React.useMemo((): ProcessedTicket[] => {
     if (!data?.pages) return [];
-    return data.pages.flatMap((page: TicketListResponse) => 
-      page.tickets.map(ticket => ({
-        ...ticket,
+    return data.pages.flatMap((page) => 
+      page.tickets.map((ticket): ProcessedTicket => ({
+        id: ticket.id,
+        title: ticket.title,
+        description: ticket.description,
+        descriptionHtml: ticket.descriptionHtml,
         status: ticket.status as TicketStatus,
-        priority: ticket.priority as TicketPriority
+        priority: ticket.priority as TicketPriority,
+        customerId: ticket.customerId,
+        assignedToId: ticket.assignedToId,
+        createdById: ticket.createdById,
+        tags: ticket.tags,
+        createdBy: {
+          name: ticket.createdBy?.name ?? null,
+          email: ticket.createdBy?.email ?? null
+        },
+        assignedTo: ticket.assignedTo ? {
+          name: ticket.assignedTo.name,
+          email: ticket.assignedTo.email
+        } : null,
+        lastUpdatedBy: {
+          name: ticket.lastUpdatedBy?.name ?? null,
+          email: ticket.lastUpdatedBy?.email ?? null
+        },
+        messageCount: ticket.messageCount,
+        createdAt: ticket.createdAt,
+        updatedAt: ticket.updatedAt
       }))
     );
   }, [data?.pages]);
@@ -199,7 +222,51 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
   }
 
   if (!tickets || tickets.length === 0) {
-    return <div className="text-center p-8 text-gray-500">No tickets found.</div>;
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
+          <h2 className="text-2xl font-bold">
+            {role === UserRole.CUSTOMER ? 'My Tickets' : 'All Tickets'}
+          </h2>
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Show completed tickets toggle */}
+            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/20">
+              <Checkbox
+                id="show-completed"
+                checked={showCompleted}
+                onCheckedChange={(checked: boolean) => setShowCompleted(checked)}
+                className="border-white/50 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+              />
+              <label htmlFor="show-completed" className="text-sm text-white font-medium select-none">
+                Show closed/resolved tickets
+              </label>
+            </div>
+
+            {/* Filter by team tags toggle */}
+            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/20">
+              <Checkbox
+                id="filter-team-tags"
+                checked={filterByTeamTags}
+                onCheckedChange={(checked: boolean) => setFilterByTeamTags(checked)}
+                className="border-white/50 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+              />
+              <label htmlFor="filter-team-tags" className="text-sm text-white font-medium select-none">
+                Filter by my team tags
+              </label>
+            </div>
+          </div>
+        </div>
+        <div className="text-center p-8 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
+          <p className="text-gray-300">
+            {selectedTags.length > 0 
+              ? "No tickets found matching the selected tag filters." 
+              : !showCompleted 
+                ? "No open tickets found. Try showing closed/resolved tickets." 
+                : "No tickets found."}
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -343,7 +410,9 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
                     </div>
                   )}
                 </div>
-                <p className="text-gray-800 text-sm">{ticket.description}</p>
+                <div className="text-gray-800 text-sm prose prose-sm max-w-none">
+                  <RichTextContent content={ticket.descriptionHtml || ticket.description} />
+                </div>
                 
                 {/* Show customer and assigned agent info for non-customers */}
                 {role !== UserRole.CUSTOMER && (

@@ -56,15 +56,26 @@ export const messageRouter = router({
             content_html: input.contentHtml,
             ticket_id: input.ticketId,
             is_internal: input.isInternal ?? false,
-            created_by_id: ctx.user.id
+            created_by_id: ctx.user.id,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           }])
           .select()
           .single();
 
-        if (messageError || !message) {
+        if (messageError) {
+          console.error('Error creating message:', messageError);
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Failed to create message',
+            cause: messageError,
+          });
+        }
+
+        if (!message) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to create message - no message returned',
           });
         }
 

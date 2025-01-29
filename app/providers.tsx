@@ -7,7 +7,7 @@ import { trpc } from '@/app/lib/trpc/client';
 import { getTRPCClient } from '@/app/lib/trpc/client';
 import { ThemeProvider } from 'next-themes';
 
-function AppProviders({ children }: { children: React.ReactNode }) {
+function TrpcProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: {
@@ -29,13 +29,21 @@ function AppProviders({ children }: { children: React.ReactNode }) {
   const [trpcClient] = useState(() => trpc.createClient(getTRPCClient()));
 
   return (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        {children}
+      </QueryClientProvider>
+    </trpc.Provider>
+  );
+}
+
+function AppProviders({ children }: { children: React.ReactNode }) {
+  return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <AuthProvider>
-        <trpc.Provider client={trpcClient} queryClient={queryClient}>
-          <QueryClientProvider client={queryClient}>
-            {children}
-          </QueryClientProvider>
-        </trpc.Provider>
+        <TrpcProvider>
+          {children}
+        </TrpcProvider>
       </AuthProvider>
     </ThemeProvider>
   );

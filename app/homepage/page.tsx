@@ -146,13 +146,10 @@ const Homepage = () => {
         {/* Tickets Section */}
         <div className="mb-8 bg-gray-800 p-6 rounded-lg">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">
-              {role === UserRole.CUSTOMER ? 'Your Tickets' : 'All Tickets'}
-            </h2>
             {canCreateTickets && (
               <button
                 onClick={() => router.push('/tickets/create')}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md transition-colors"
+                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md transition-colors ml-auto"
               >
                 Create New Ticket
               </button>

@@ -16,6 +16,7 @@ import {
 } from "@/app/components/ui/select";
 import { Alert, AlertDescription } from "@/app/components/ui/alert";
 import { AlertCircle } from "lucide-react";
+import { supabase } from '@/app/lib/auth/supabase';
 
 export default function Auth() {
   const [email, setEmail] = useState('');
@@ -36,21 +37,42 @@ export default function Auth() {
         role: user.app_metadata?.user_role,
         provider: user.app_metadata?.provider
       });
-      const redirect = searchParams.get('redirect');
-      console.log('Sign-in page: Redirect param:', redirect);
       
-      // Always go to homepage if redirect is homepage or root
-      if (!redirect || redirect === '/' || redirect.startsWith('/homepage')) {
-        console.log('Sign-in page: Redirecting to homepage...');
-        // Use replace to prevent back navigation
-        router.replace('/homepage/');
+      // If we just signed out, don't redirect immediately
+      if (searchParams.get('signedOut') === 'true') {
+        console.log('Sign-in page: Just signed out, not redirecting');
         return;
       }
 
-      // Otherwise, go to the requested page
-      console.log('Sign-in page: Redirecting to:', redirect);
-      // Use replace to prevent back navigation
-      router.replace(redirect);
+      // Wait for session cookies to be set
+      const handleRedirect = async () => {
+        try {
+          // Verify session is established
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            console.log('Sign-in page: Waiting for session to be established...');
+            return;
+          }
+
+          const redirect = searchParams.get('redirect');
+          console.log('Sign-in page: Redirect param:', redirect);
+          
+          // Always go to homepage if redirect is homepage or root
+          if (!redirect || redirect === '/' || redirect.startsWith('/homepage')) {
+            console.log('Sign-in page: Redirecting to homepage...');
+            router.replace('/homepage/');
+            return;
+          }
+
+          // Otherwise, go to the requested page
+          console.log('Sign-in page: Redirecting to:', redirect);
+          router.replace(redirect);
+        } catch (error) {
+          console.error('Sign-in page: Error handling redirect:', error);
+        }
+      };
+
+      handleRedirect();
     }
   }, [user, loading, router, searchParams]);
 

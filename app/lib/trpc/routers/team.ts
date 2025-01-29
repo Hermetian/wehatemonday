@@ -688,10 +688,30 @@ export const teamRouter = router({
   getUserTeamTags: protectedProcedure
     .query(async ({ ctx }) => {
       try {
+        // First get the teams where the user is a member
+        const { data: teamMembers, error: memberError } = await ctx.supabase
+          .from('team_members')
+          .select('team_id')
+          .eq('user_id', ctx.user.id);
+
+        if (memberError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to fetch team memberships",
+            cause: memberError,
+          });
+        }
+
+        if (!teamMembers || teamMembers.length === 0) {
+          return [];
+        }
+
+        // Then get the tags for all these teams
+        const teamIds = teamMembers.map(tm => tm.team_id);
         const { data: teams, error } = await ctx.supabase
           .from('teams')
           .select('tags')
-          .eq('created_by_id', ctx.user.id);
+          .in('id', teamIds);
 
         if (error) {
           throw new TRPCError({
