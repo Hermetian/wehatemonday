@@ -2,13 +2,13 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../trpc";
 import { createAuditLog } from "@/app/lib/utils/audit-logger";
-import { user_role } from '@/app/types/auth';
+import { Role } from '@/app/types/auth';
 
 export type TeamMember = {
   id: string;
   name: string | null;
   email: string;
-  role: user_role;
+  role: Role;
 };
 
 export type Team = {
@@ -24,7 +24,7 @@ type TeamMemberWithUser = {
     id: string;
     name: string | null;
     email: string;
-    role: user_role;
+    role: Role;
   };
 };
 

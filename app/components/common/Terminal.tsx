@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Role } from '@/app/types/auth';
 
 interface TerminalProps {
-  userRole?: Role;
+  userRole: Role;
 }
 
 const TEST_USER_API_TEMPLATE = {
@@ -16,8 +16,8 @@ const TEST_USER_API_TEMPLATE = {
     { value: "Demo User", weight: 1 }
   ],
   role: [
-    { value: 'CUSTOMER', weight: 8 },
-    { value: 'AGENT', weight: 2 }
+    { value: 'CUSTOMER' as Role, weight: 8 },
+    { value: 'AGENT' as Role, weight: 2 }
   ],
   duration: 48,
   flags: [
@@ -31,12 +31,12 @@ const TEST_USER_API_TEMPLATE = {
 const TEST_TICKET_API_TEMPLATE = {
   ticketCount: 5,
   originatingRole: [
-    { value: 'CUSTOMER', weight: 8 },
-    { value: 'AGENT', weight: 2 }
+    { value: 'CUSTOMER' as Role, weight: 8 },
+    { value: 'AGENT' as Role, weight: 2 }
   ],
   assignedRole: [
-    { value: 'AGENT', weight: 8 },
-    { value: 'MANAGER', weight: 2 }
+    { value: 'AGENT' as Role, weight: 8 },
+    { value: 'MANAGER' as Role, weight: 2 }
   ],
   status: [
     { value: "OPEN", weight: 6 },

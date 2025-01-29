@@ -8,6 +8,7 @@ import Terminal from '@/app/components/common/Terminal';
 import { UserSettings } from '@/app/components/auth/UserSettings';
 import { TeamManagement } from '@/app/components/teams/TeamManagement';
 import { trpc } from '@/app/lib/trpc/client';
+import { Role } from '@/app/types/auth';
 
 const TestComponent = () => {
   const { data: simpleData, error: simpleError } = trpc.team.simpleTest.useQuery();
@@ -68,7 +69,7 @@ const Homepage = () => {
       loading,
       userPresent: !!user,
       userEmail: user?.email,
-      userRole: user?.app_metadata?.user_role,
+      userRole: role,
       sessionRole: role
     });
 
@@ -105,12 +106,12 @@ const Homepage = () => {
 
   console.log('Homepage: Rendering dashboard for user:', {
     email: user.email,
-    role: user.app_metadata?.user_role,
-    sessionRole: role
+    role: role as Role,
+    sessionRole: role as Role
   });
 
-  const isManager = role === 'MANAGER' || role === 'ADMIN';
-  const canCreateTickets = role === 'CUSTOMER' || role === 'AGENT' || role === 'MANAGER';
+  const isManager = (role as Role) === 'MANAGER' || (role as Role) === 'ADMIN';
+  const canCreateTickets = (role as Role) === 'CUSTOMER' || (role as Role) === 'AGENT' || (role as Role) === 'MANAGER';
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -127,10 +128,10 @@ const Homepage = () => {
         </div>
 
         {/* Admin Console */}
-        {role === 'ADMIN' && (
+        {(role as Role) === 'ADMIN' && (
           <div className="mb-8 bg-gray-800 p-6 rounded-lg">
             <h2 className="text-xl font-semibold mb-4">Admin Console</h2>
-            <Terminal userRole={role} />
+            <Terminal userRole={role as Role} />
           </div>
         )}
 
@@ -156,8 +157,8 @@ const Homepage = () => {
           </div>
           
           {/* Ticket List */}
-          {(role === 'ADMIN' || role === 'MANAGER' || role === 'AGENT') && <TicketList />}
-          {role === 'CUSTOMER' && <TicketList filterByUser={user?.id} />}
+          {((role as Role) === 'ADMIN' || (role as Role) === 'MANAGER' || (role as Role) === 'AGENT') && <TicketList />}
+          {(role as Role) === 'CUSTOMER' && <TicketList filterByUser={user?.id} />}
         </div>
       </div>
     </div>

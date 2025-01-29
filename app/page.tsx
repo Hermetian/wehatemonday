@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/lib/auth/AuthContext';
+import { Role } from '@/app/types/auth';
 //import Image from "next/image";
 
 export default function Home() {
@@ -13,7 +14,7 @@ export default function Home() {
       if (user) {
         console.log('Root page: User authenticated', {
           email: user.email,
-          role: user.app_metadata?.user_role,
+          role: user.role as Role,
           provider: user.app_metadata?.provider
         });
         console.log('Root page: Redirecting to homepage...');

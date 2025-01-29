@@ -245,7 +245,7 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
       <div className="space-y-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
           <h2 className="text-2xl font-bold">
-            {role === 'CUSTOMER' ? 'My Tickets' : 'All Tickets'}
+            {(role as Role) === 'CUSTOMER' ? 'My Tickets' : 'All Tickets'}
           </h2>
           <div className="flex flex-wrap items-center gap-4">
             {/* Show completed tickets toggle */}
@@ -292,7 +292,7 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
         <h2 className="text-2xl font-bold">
-          {role === 'CUSTOMER' ? 'My Tickets' : 'All Tickets'}
+          {(role as Role) === 'CUSTOMER' ? 'My Tickets' : 'All Tickets'}
         </h2>
         <div className="flex flex-wrap items-center gap-4">
           {/* Show completed tickets toggle */}
