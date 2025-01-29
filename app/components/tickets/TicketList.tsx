@@ -6,6 +6,7 @@ import { TicketDialog } from './TicketDialog';
 import { MessageCircle, SortAsc, Filter, X, Loader2 } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Checkbox } from '@/app/components/ui/checkbox';
+import { Role } from '@/app/types/auth';
 import {
   DropdownMenu,
   DropdownMenuContent,
