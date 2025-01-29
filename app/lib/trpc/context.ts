@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js';
 import { inferAsyncReturnType } from '@trpc/server';
 import { TRPCError } from '@trpc/server';
 import { Role } from '@/app/types/auth';
+import { createAdminClient } from '@/app/lib/auth/supabase';
 
 // Shared function to create Supabase client
 export function createSupabaseContext(req: Request) {
@@ -102,14 +103,9 @@ async function verifyUserRole(supabase: ReturnType<typeof createServerClient>, u
         console.error('Failed to sync auth metadata:', updateError);
       }
 
-      // Use service role client to update database role claim
-      const serviceClient = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        { cookies: { get: () => '', set: () => {}, remove: () => {} } }
-      );
-
-      const { error: dbRoleError } = await serviceClient.rpc('set_claim', {
+      // Use admin client to update database role claim
+      const adminClient = createAdminClient();
+      const { error: dbRoleError } = await adminClient.rpc('set_claim', {
         uid: user.id,
         claim: 'role',
         value: dbRole.toLowerCase()

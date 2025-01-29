@@ -41,7 +41,7 @@ import { StatusBadge } from '@/app/components/ui/status-badge';
 export function UserSettings() {
   const router = useRouter();
   const { user, role, refreshSession, signOut } = useAuth();
-  
+
   // Get user profile from Prisma
   const { data: userProfile } = trpc.user.getProfile.useQuery(undefined, {
     enabled: !!user,
@@ -119,11 +119,11 @@ export function UserSettings() {
   const handleUpdateProfile = async () => {
     if (isLoading) return;
     setIsLoading(true);
-    
+
     try {
       let hasChanges = false;
       const needsPasswordVerification = hasEmailChanged || (showPasswordChange && newPassword);
-
+    
       // Validate new passwords match if changing password
       if (showPasswordChange && newPassword) {
         if (newPassword !== confirmNewPassword) {
@@ -164,7 +164,7 @@ export function UserSettings() {
           toast.error(`Failed to update password: ${passwordError.message}`);
           setIsLoading(false);
           return;
-        }
+      }
 
         toast.success('Password updated successfully');
       }
@@ -186,7 +186,10 @@ export function UserSettings() {
       if (pendingRole !== currentRole) {
         hasChanges = true;
         try {
-          await updateRole.mutateAsync({ role: pendingRole });
+          await updateRole.mutateAsync({
+            user_id: user?.id || '',
+            new_role: pendingRole
+          });
           setCurrentRole(pendingRole);
         } catch (error: unknown) {
           console.error('Role update error:', error);
@@ -273,67 +276,67 @@ export function UserSettings() {
   return (
     <div className="flex items-center gap-2">
       <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-        <DialogTrigger asChild>
+      <DialogTrigger asChild>
           <Button variant="ghost" size="icon">
             <Cog className="h-4 w-4" />
-          </Button>
-        </DialogTrigger>
+        </Button>
+      </DialogTrigger>
         <DialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">
-          <DialogHeader>
+        <DialogHeader>
             <DialogTitle className="text-foreground">Account Settings</DialogTitle>
             <DialogDescription className="text-muted-foreground">
               Make changes to your account settings here.
             </DialogDescription>
-          </DialogHeader>
+        </DialogHeader>
           <form onSubmit={(e) => { e.preventDefault(); handleUpdateProfile(); }} autoComplete="off">
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-foreground">Display Name</Label>
-                <Input
-                  id="name"
+            <Input
+              id="name"
                   name="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
                   placeholder="Your display name"
                   autoComplete="off"
                   className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
+            />
+          </div>
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-foreground">Email</Label>
-                <Input
-                  id="email"
+            <Input
+              id="email"
                   name="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
                   placeholder="Your email address"
                   autoComplete="off"
                   className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground placeholder:text-muted-foreground"
-                />
+            />
                 {hasEmailChanged && (
                   <p className="text-sm text-muted-foreground">
                     You&apos;ll need to verify your new email address
                   </p>
                 )}
-              </div>
+          </div>
               <div className="space-y-2">
                 <Label htmlFor="role" className="text-foreground">Role</Label>
                 <Select value={pendingRole} onValueChange={(value: Role) => setPendingRole(value)}>
                   <SelectTrigger className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground">
                     <SelectValue />
-                  </SelectTrigger>
+                </SelectTrigger>
                   <SelectContent className="bg-[#1E2D3D] border-[#1E2D3D]">
-                    {VALID_ROLES.map((r) => (
+                  {VALID_ROLES.map((r) => (
                       <SelectItem key={r} value={r} className="text-foreground hover:bg-[#0A1A2F]">
                         <StatusBadge role={r}>
-                          {r}
+                      {r}
                         </StatusBadge>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
               <div className="space-y-2">
                 <Button
                   type="button"
@@ -393,7 +396,7 @@ export function UserSettings() {
                     className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground placeholder:text-muted-foreground"
                   />
                 </div>
-              )}
+          )}
             </div>
             <DialogFooter>
               <Button
@@ -442,8 +445,8 @@ export function UserSettings() {
               Sign Out
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </DialogContent>
+    </Dialog>
 
       <AlertDialog open={isPasswordMismatchOpen} onOpenChange={setIsPasswordMismatchOpen}>
         <AlertDialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">

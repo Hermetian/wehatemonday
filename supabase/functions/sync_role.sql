@@ -28,7 +28,7 @@ BEGIN
     user_id,
     old_data,
     new_data,
-    created_at
+    "timestamp"
   ) VALUES (
     'UPDATE',
     'USER',

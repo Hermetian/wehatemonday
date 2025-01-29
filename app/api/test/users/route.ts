@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server';
 import { generateTestUserData, TestUserConfig } from '@/app/lib/utils/test-data-generator';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
-import { supabaseAdmin } from '@/app/lib/auth/supabase';
+import { createAdminClient } from '@/app/lib/auth/supabase';
 
 export async function POST(request: Request) {
   try {
     const config: TestUserConfig = await request.json();
     const testUsers = generateTestUserData(config);
+    const adminClient = createAdminClient();
     
     // Create users
-    const { data: createdUsers, error: createError } = await supabaseAdmin
+    const { data: createdUsers, error: createError } = await adminClient
       .from('users')
       .insert(testUsers)
       .select();
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
           userId: user.id,
           oldData: null,
           newData: { ...user, type: 'TEST_USER' },
-          supabase: supabaseAdmin
+          supabase: adminClient
         })
       )
     );
@@ -48,79 +49,85 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const { batchId } = await request.json();
+    const { searchParams } = new URL(request.url);
+    const batchId = searchParams.get('batchId');
+    const adminClient = createAdminClient();
 
-    // Find all users in the batch
-    const { data: usersToDelete, error: findError } = await supabaseAdmin
+    if (!batchId) {
+      return NextResponse.json(
+        { error: 'Batch ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Find users to delete
+    const { data: usersToDelete, error: findError } = await adminClient
       .from('users')
       .select('id')
       .eq('test_batch_id', batchId);
 
     if (findError) throw findError;
     if (!usersToDelete?.length) {
-      return NextResponse.json({ 
-        success: true,
-        deletedCount: 0
-      });
+      return NextResponse.json({ success: true, deletedCount: 0 });
     }
 
     const userIds = usersToDelete.map(u => u.id);
 
-    // Find all tickets associated with these users
-    const { data: userTickets, error: ticketQueryError } = await supabaseAdmin
+    // Find and delete related tickets
+    const { data: userTickets, error: ticketQueryError } = await adminClient
       .from('tickets')
       .select('id')
-      .or(`created_by_id.in.(${userIds}),assigned_to_id.in.(${userIds})`);
+      .in('created_by_id', userIds);
 
     if (ticketQueryError) throw ticketQueryError;
 
-    // Delete related data in order due to foreign key constraints
     if (userTickets?.length) {
       const ticketIds = userTickets.map(t => t.id);
 
-      // Delete audit logs for tickets
-      const { error: ticketAuditError } = await supabaseAdmin
+      // Delete ticket audit logs
+      const { error: ticketAuditError } = await adminClient
         .from('audit_logs')
         .delete()
-        .eq('entity', 'TICKET')
-        .in('entity_id', ticketIds);
-      
+        .in('entity_id', ticketIds)
+        .eq('entity', 'TICKET');
+
       if (ticketAuditError) throw ticketAuditError;
 
-      // Delete tickets (messages will be deleted by cascade)
-      const { error: ticketError } = await supabaseAdmin
+      // Delete tickets
+      const { error: ticketError } = await adminClient
         .from('tickets')
         .delete()
-        .or(`created_by_id.in.(${userIds}),assigned_to_id.in.(${userIds})`);
+        .in('id', ticketIds);
 
       if (ticketError) throw ticketError;
     }
 
     // Delete team memberships
-    const { error: teamMemberError } = await supabaseAdmin
+    const { error: teamMemberError } = await adminClient
       .from('team_members')
       .delete()
       .in('user_id', userIds);
 
     if (teamMemberError) throw teamMemberError;
 
-    // Delete audit logs for users
-    const { error: userAuditError } = await supabaseAdmin
+    // Delete user audit logs
+    const { error: userAuditError } = await adminClient
       .from('audit_logs')
       .delete()
-      .in('user_id', userIds);
+      .in('entity_id', userIds)
+      .eq('entity', 'USER');
 
     if (userAuditError) throw userAuditError;
 
-    // Finally delete users
-    const { error: userError } = await supabaseAdmin
+    // Delete users
+    const { error: userError } = await adminClient
       .from('users')
       .delete()
-      .eq('test_batch_id', batchId);
+      .in('id', userIds);
 
     if (userError) throw userError;
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
       deletedCount: usersToDelete.length
     });

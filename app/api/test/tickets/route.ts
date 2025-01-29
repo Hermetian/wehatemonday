@@ -1,17 +1,18 @@
 import { NextResponse } from 'next/server';
 import { generateTestTicketData, TestTicketConfig } from '@/app/lib/utils/test-ticket-generator';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
-import { supabaseAdmin } from '@/app/lib/auth/supabase';
+import { createAdminClient } from '@/app/lib/auth/supabase';
 
 export async function POST(request: Request) {
   try {
     const config: TestTicketConfig = await request.json();
     const testTickets = await generateTestTicketData(config);
+    const adminClient = createAdminClient();
     
     // Create tickets and fetch related user data
     const createdTickets = [];
     for (const ticketData of testTickets) {
-      const { data: ticket, error: ticketError } = await supabaseAdmin
+      const { data: ticket, error: ticketError } = await adminClient
         .from('tickets')
         .insert(ticketData)
         .select(`
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
           userId: ticket.created_by_id,
           oldData: null,
           newData: { ...ticket, type: 'TEST_TICKET' },
-          supabase: supabaseAdmin
+          supabase: adminClient
         })
       )
     );
@@ -56,42 +57,48 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const { batchId } = await request.json();
+    const { searchParams } = new URL(request.url);
+    const batchId = searchParams.get('batchId');
+    const adminClient = createAdminClient();
 
-    // Find all tickets in the batch
-    const { data: ticketsToDelete, error: findError } = await supabaseAdmin
+    if (!batchId) {
+      return NextResponse.json(
+        { error: 'Batch ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Find tickets to delete
+    const { data: ticketsToDelete, error: findError } = await adminClient
       .from('tickets')
       .select('id')
       .eq('test_batch_id', batchId);
 
     if (findError) throw findError;
     if (!ticketsToDelete?.length) {
-      return NextResponse.json({ 
-        success: true,
-        deletedCount: 0
-      });
+      return NextResponse.json({ success: true, deletedCount: 0 });
     }
 
     const ticketIds = ticketsToDelete.map(t => t.id);
 
-    // Delete related data in order (messages will be deleted by cascade)
-    const { error: auditError } = await supabaseAdmin
+    // Delete audit logs
+    const { error: auditError } = await adminClient
       .from('audit_logs')
       .delete()
-      .eq('entity', 'TICKET')
-      .in('entity_id', ticketIds);
-    
+      .in('entity_id', ticketIds)
+      .eq('entity', 'TICKET');
+
     if (auditError) throw auditError;
 
     // Delete tickets (messages will be deleted by cascade)
-    const { error: ticketError } = await supabaseAdmin
+    const { error: ticketError } = await adminClient
       .from('tickets')
       .delete()
-      .eq('test_batch_id', batchId);
+      .in('id', ticketIds);
 
     if (ticketError) throw ticketError;
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
       deletedCount: ticketsToDelete.length
     });

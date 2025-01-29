@@ -2,6 +2,8 @@ import { z } from "zod";
 import { router, protectedProcedure, publicProcedure } from "../trpc";
 import { createAuditLog } from "@/app/lib/utils/audit-logger";
 import { TRPCError } from "@trpc/server";
+import { VALID_ROLES } from '@/app/types/auth';
+import { createAdminClient } from '@/app/lib/auth/supabase';
 
 export const userRouter = router({
   getProfile: publicProcedure
@@ -106,54 +108,91 @@ export const userRouter = router({
     }),
 
   updateRole: protectedProcedure
-    .input(
-      z.object({
-        role: z.string(),
-      })
-    )
+    .input(z.object({
+      user_id: z.string(),
+      new_role: z.enum(VALID_ROLES),
+    }))
     .mutation(async ({ ctx, input }) => {
       try {
-        const userId = ctx.user.id;
-
-        // Get existing user data for audit log
-        const { data: existingUser, error: fetchError } = await ctx.supabase
-          .from('users')
-          .select('role')
-          .eq('id', userId)
-          .single();
-
-        if (fetchError || !existingUser) {
-          throw new Error("User not found");
+        // Only admins can update roles
+        if (ctx.user.role !== 'ADMIN') {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Only administrators can update user roles',
+          });
         }
 
-        // Update user role
+        // Get current user data for audit log
+        const { data: currentUser, error: fetchError } = await ctx.supabase
+          .from('users')
+          .select('role')
+          .eq('id', input.user_id)
+          .single();
+
+        if (fetchError || !currentUser) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'User not found',
+          });
+        }
+
+        // Update user role in the database
         const { data: updatedUser, error: updateError } = await ctx.supabase
           .from('users')
-          .update({
-            role: input.role,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', userId)
+          .update({ role: input.new_role })
+          .eq('id', input.user_id)
           .select()
           .single();
 
         if (updateError || !updatedUser) {
-          throw new Error("Failed to update user role");
+          console.error('Error updating user role:', updateError);
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to update user role in database',
+          });
+        }
+
+        // Update user role in auth metadata using admin client
+        const adminClient = createAdminClient();
+        const { error: authError } = await adminClient.auth.admin.updateUserById(
+          input.user_id,
+          {
+            app_metadata: {
+              user_role: input.new_role
+            }
+          }
+        );
+
+        if (authError) {
+          console.error('Error updating auth metadata:', authError);
+          // Revert database change if auth update fails
+          await ctx.supabase
+            .from('users')
+            .update({ role: currentUser.role })
+            .eq('id', input.user_id);
+
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to update user role in auth metadata',
+          });
         }
 
         // Create audit log
         await createAuditLog({
           action: 'UPDATE',
           entity: 'USER',
-          entityId: userId,
+          entityId: input.user_id,
           userId: ctx.user.id,
-          oldData: existingUser,
-          newData: updatedUser,
+          oldData: { role: currentUser.role },
+          newData: { role: input.new_role },
           supabase: ctx.supabase
         });
 
         return updatedUser;
       } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        
+        console.error('Unexpected error in updateRole:', error);
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Failed to update user role',
