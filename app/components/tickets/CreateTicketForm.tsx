@@ -66,14 +66,16 @@ export const CreateTicketForm = () => {
     }
     
     try {
-      await createTicket.mutateAsync({
-        title,
-        description,
-        descriptionHtml,
+      const ticketData = {
+        title: title.trim(),
+        description: description.trim(),
+        description_html: descriptionHtml,
         priority,
-        customerId: user.id,
-        createdBy: user.id
-      });
+        created_by_id: user.id,
+        customer_id: user.id,
+      };
+
+      await createTicket.mutateAsync(ticketData);
     } catch (error: unknown) {
       console.error('Error creating ticket:', error);
       setError(error instanceof Error ? error.message : 'Failed to create ticket. Please try again.');

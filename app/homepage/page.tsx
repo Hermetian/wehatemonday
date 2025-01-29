@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/lib/auth/AuthContext';
 import { TicketList } from '@/app/components/tickets/TicketList';
 import Terminal from '@/app/components/common/Terminal';
-import { UserRole } from '@prisma/client';
 import { UserSettings } from '@/app/components/auth/UserSettings';
 import { TeamManagement } from '@/app/components/teams/TeamManagement';
 import { trpc } from '@/app/lib/trpc/client';
@@ -110,8 +109,8 @@ const Homepage = () => {
     sessionRole: role
   });
 
-  const isManager = role === UserRole.MANAGER || role === UserRole.ADMIN;
-  const canCreateTickets = role === UserRole.CUSTOMER || role === UserRole.AGENT || role === UserRole.MANAGER;
+  const isManager = role === 'MANAGER' || role === 'ADMIN';
+  const canCreateTickets = role === 'CUSTOMER' || role === 'AGENT' || role === 'MANAGER';
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -128,7 +127,7 @@ const Homepage = () => {
         </div>
 
         {/* Admin Console */}
-        {role === UserRole.ADMIN && (
+        {role === 'ADMIN' && (
           <div className="mb-8 bg-gray-800 p-6 rounded-lg">
             <h2 className="text-xl font-semibold mb-4">Admin Console</h2>
             <Terminal userRole={role} />
@@ -157,8 +156,8 @@ const Homepage = () => {
           </div>
           
           {/* Ticket List */}
-          {(role === UserRole.ADMIN || role === UserRole.MANAGER || role === UserRole.AGENT) && <TicketList />}
-          {role === UserRole.CUSTOMER && <TicketList filterByUser={user?.id} />}
+          {(role === 'ADMIN' || role === 'MANAGER' || role === 'AGENT') && <TicketList />}
+          {role === 'CUSTOMER' && <TicketList filterByUser={user?.id} />}
         </div>
       </div>
     </div>

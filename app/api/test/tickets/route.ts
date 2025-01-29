@@ -1,35 +1,29 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/app/prisma';
 import { generateTestTicketData, TestTicketConfig } from '@/app/lib/utils/test-ticket-generator';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
-import { Prisma } from '@prisma/client';
 import { supabaseAdmin } from '@/app/lib/auth/supabase';
 
 export async function POST(request: Request) {
   try {
     const config: TestTicketConfig = await request.json();
-    const testTickets = await generateTestTicketData(prisma, config);
+    const testTickets = await generateTestTicketData(config);
     
-    const createdTickets = await prisma.$transaction(
-      testTickets.map(ticketData => {
-        const { metadata, testBatchId, ...rest } = ticketData;
-        return prisma.ticket.create({
-          data: {
-            ...rest,
-            metadata: metadata as Prisma.InputJsonValue,
-            testBatchId
-          },
-          include: {
-            createdBy: {
-              select: { id: true, name: true, email: true }
-            },
-            assignedTo: {
-              select: { id: true, name: true, email: true }
-            }
-          }
-        });
-      })
-    );
+    // Create tickets and fetch related user data
+    const createdTickets = [];
+    for (const ticketData of testTickets) {
+      const { data: ticket, error: ticketError } = await supabaseAdmin
+        .from('tickets')
+        .insert(ticketData)
+        .select(`
+          *,
+          created_by:created_by_id(id, name, email),
+          assigned_to:assigned_to_id(id, name, email)
+        `)
+        .single();
+
+      if (ticketError) throw ticketError;
+      createdTickets.push(ticket);
+    }
 
     // Create audit logs for test tickets
     await Promise.all(
@@ -38,7 +32,7 @@ export async function POST(request: Request) {
           action: 'CREATE',
           entity: 'TICKET',
           entityId: ticket.id,
-          userId: ticket.createdById,
+          userId: ticket.created_by_id,
           oldData: null,
           newData: { ...ticket, type: 'TEST_TICKET' },
           supabase: supabaseAdmin
@@ -49,7 +43,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ 
       success: true, 
       tickets: createdTickets,
-      batchId: createdTickets[0].testBatchId 
+      batchId: createdTickets[0].test_batch_id 
     });
   } catch (error) {
     console.error('Test ticket creation error:', error);
@@ -65,40 +59,37 @@ export async function DELETE(request: Request) {
     const { batchId } = await request.json();
 
     // Find all tickets in the batch
-    const ticketsToDelete = await prisma.ticket.findMany({
-      where: {
-        testBatchId: batchId
-      }
-    });
+    const { data: ticketsToDelete, error: findError } = await supabaseAdmin
+      .from('tickets')
+      .select('id')
+      .eq('test_batch_id', batchId);
 
-    // Delete all related data in a transaction
-    await prisma.$transaction(async (tx) => {
-      // Delete messages
-      await tx.message.deleteMany({
-        where: {
-          ticketId: {
-            in: ticketsToDelete.map(t => t.id)
-          }
-        }
+    if (findError) throw findError;
+    if (!ticketsToDelete?.length) {
+      return NextResponse.json({ 
+        success: true,
+        deletedCount: 0
       });
+    }
 
-      // Delete audit logs
-      await tx.auditLog.deleteMany({
-        where: {
-          entity: 'TICKET',
-          entityId: {
-            in: ticketsToDelete.map(t => t.id)
-          }
-        }
-      });
+    const ticketIds = ticketsToDelete.map(t => t.id);
 
-      // Delete tickets
-      await tx.ticket.deleteMany({
-        where: {
-          testBatchId: batchId
-        }
-      });
-    });
+    // Delete related data in order (messages will be deleted by cascade)
+    const { error: auditError } = await supabaseAdmin
+      .from('audit_logs')
+      .delete()
+      .eq('entity', 'TICKET')
+      .in('entity_id', ticketIds);
+    
+    if (auditError) throw auditError;
+
+    // Delete tickets (messages will be deleted by cascade)
+    const { error: ticketError } = await supabaseAdmin
+      .from('tickets')
+      .delete()
+      .eq('test_batch_id', batchId);
+
+    if (ticketError) throw ticketError;
 
     return NextResponse.json({ 
       success: true,

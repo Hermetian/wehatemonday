@@ -10,6 +10,17 @@ export type DbRole = Role;  // Maps to user_role_enum in PostgreSQL
 // Type alias for the JWT metadata field (stored as string)
 export type JwtRole = Role;  // Stored as uppercase string in JWT
 
+// Legacy Prisma UserRole type alias for compatibility during migration
+export type UserRole = Role;
+
+// Export an enum-like object for use in place of Prisma's UserRole
+export const UserRole = {
+  ADMIN: 'ADMIN',
+  MANAGER: 'MANAGER',
+  AGENT: 'AGENT',
+  CUSTOMER: 'CUSTOMER'
+} as const;
+
 // Database user type
 export interface DbUser {
   id: string;
@@ -30,4 +41,3 @@ export interface AuthMetadata {
 
 // Deprecated - will be removed
 export type user_role = Role;  // For backwards compatibility
-export type UserRole = Role;   // For backwards compatibility

@@ -8,9 +8,9 @@ export const messageRouter = router({
     .input(
       z.object({
         content: z.string(),
-        contentHtml: z.string(),
-        ticketId: z.string(),
-        isInternal: z.boolean().optional(),
+        content_html: z.string(),
+        ticket_id: z.string(),
+        is_internal: z.boolean().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -19,7 +19,7 @@ export const messageRouter = router({
         const { data: ticket, error: ticketError } = await ctx.supabase
           .from('tickets')
           .select('customer_id')
-          .eq('id', input.ticketId)
+          .eq('id', input.ticket_id)
           .single();
 
         if (ticketError || !ticket) {
@@ -33,7 +33,7 @@ export const messageRouter = router({
         const userRole = ctx.user.role;
 
         // Only allow internal messages from staff
-        if (input.isInternal && userRole === 'CUSTOMER') {
+        if (input.is_internal && userRole === 'CUSTOMER') {
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'Only staff can create internal messages',
@@ -53,9 +53,9 @@ export const messageRouter = router({
           .from('messages')
           .insert([{
             content: input.content,
-            content_html: input.contentHtml,
-            ticket_id: input.ticketId,
-            is_internal: input.isInternal ?? false,
+            content_html: input.content_html,
+            ticket_id: input.ticket_id,
+            is_internal: input.is_internal ?? false,
             created_by_id: ctx.user.id,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
@@ -104,7 +104,7 @@ export const messageRouter = router({
   list: protectedProcedure
     .input(
       z.object({
-        ticketId: z.string(),
+        ticket_id: z.string(),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -113,7 +113,7 @@ export const messageRouter = router({
         const { data: ticket, error: ticketError } = await ctx.supabase
           .from('tickets')
           .select('customer_id')
-          .eq('id', input.ticketId)
+          .eq('id', input.ticket_id)
           .single();
 
         if (ticketError || !ticket) {
@@ -138,7 +138,7 @@ export const messageRouter = router({
         const query = ctx.supabase
           .from('messages')
           .select('*')
-          .eq('ticket_id', input.ticketId)
+          .eq('ticket_id', input.ticket_id)
           .order('created_at', { ascending: true });
 
         // Add internal message filter for customers
@@ -155,16 +155,8 @@ export const messageRouter = router({
           });
         }
 
-        // Transform the messages to camelCase and proper types
-        return (messages || []).map(message => ({
-          id: message.id,
-          content: message.content,
-          contentHtml: message.content_html,
-          ticketId: message.ticket_id,
-          isInternal: message.is_internal,
-          createdAt: new Date(message.created_at).toISOString(),
-          updatedAt: new Date(message.updated_at).toISOString()
-        }));
+        // Return messages with snake_case fields
+        return messages || [];
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -173,5 +165,5 @@ export const messageRouter = router({
           cause: error,
         });
       }
-    })
+    }),
 }); 

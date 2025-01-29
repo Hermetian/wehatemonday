@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { UserRole } from '@prisma/client';
+import { Role } from '@/app/types/auth';
 
 interface TerminalProps {
-  userRole?: UserRole;
+  userRole?: Role;
 }
 
 const TEST_USER_API_TEMPLATE = {
@@ -16,8 +16,8 @@ const TEST_USER_API_TEMPLATE = {
     { value: "Demo User", weight: 1 }
   ],
   role: [
-    { value: UserRole.CUSTOMER, weight: 8 },
-    { value: UserRole.AGENT, weight: 2 }
+    { value: 'CUSTOMER', weight: 8 },
+    { value: 'AGENT', weight: 2 }
   ],
   duration: 48,
   flags: [
@@ -31,12 +31,12 @@ const TEST_USER_API_TEMPLATE = {
 const TEST_TICKET_API_TEMPLATE = {
   ticketCount: 5,
   originatingRole: [
-    { value: UserRole.CUSTOMER, weight: 8 },
-    { value: UserRole.AGENT, weight: 2 }
+    { value: 'CUSTOMER', weight: 8 },
+    { value: 'AGENT', weight: 2 }
   ],
   assignedRole: [
-    { value: UserRole.AGENT, weight: 8 },
-    { value: UserRole.MANAGER, weight: 2 }
+    { value: 'AGENT', weight: 8 },
+    { value: 'MANAGER', weight: 2 }
   ],
   status: [
     { value: "OPEN", weight: 6 },
@@ -120,7 +120,7 @@ const Terminal: React.FC<TerminalProps> = ({ userRole }) => {
 
   return (
     <div className="bg-gray-950 text-gray-100 p-4 rounded-lg border border-gray-800">
-      {userRole === UserRole.ADMIN && (
+      {userRole === 'ADMIN' && (
         <div className="flex gap-2 mb-4">
           <button
             onClick={() => { setMode('users'); clearTerminal(); }}
@@ -145,7 +145,7 @@ const Terminal: React.FC<TerminalProps> = ({ userRole }) => {
         </div>
       )}
       <div className="flex gap-2 mb-2">
-        {userRole === UserRole.ADMIN && (
+        {userRole === 'ADMIN' && (
           <button
             onClick={handleTestButton}
             className="bg-blue-600 hover:bg-blue-700 text-white py-1 px-4 rounded transition-colors"

@@ -28,7 +28,7 @@ type BasicTeam = {
 export function TeamManagement() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [selected_team_id, setSelectedTeamId] = useState<string | null>(null);
   const [selectedRole, setSelectedRole] = useState<Role>(VALID_ROLES[2]);
   const [searchQuery, setSearchQuery] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -58,12 +58,12 @@ export function TeamManagement() {
   const utils = trpc.useContext();
   const { data: teams, isLoading: loadingTeams } = trpc.team.list.useQuery() as { data: BasicTeam[] | undefined, isLoading: boolean };
   const { data: teamMembers, isLoading: loadingMembers } = trpc.team.getMembers.useQuery(
-    { teamId: selectedTeamId! },
-    { enabled: !!selectedTeamId }
+    { teamId: selected_team_id! },
+    { enabled: !!selected_team_id }
   ) as { data: { user: BasicUser }[] | undefined, isLoading: boolean };
   const { data: eligibleUsers, isLoading: loadingUsers } = trpc.user.listByRole.useQuery(
     { role: selectedRole, searchQuery },
-    { enabled: !!selectedTeamId }
+    { enabled: !!selected_team_id }
   ) as { data: BasicUser[] | undefined, isLoading: boolean };
   const { data: availableTags = [] } = trpc.ticket.getAllTags.useQuery();
 
@@ -77,13 +77,13 @@ export function TeamManagement() {
 
   const addMember = trpc.team.addMember.useMutation({
     onSuccess: () => {
-      utils.team.getMembers.invalidate({ teamId: selectedTeamId! });
+      utils.team.getMembers.invalidate({ teamId: selected_team_id! });
     }
   });
 
   const removeMember = trpc.team.removeMember.useMutation({
     onSuccess: () => {
-      utils.team.getMembers.invalidate({ teamId: selectedTeamId! });
+      utils.team.getMembers.invalidate({ teamId: selected_team_id! });
     }
   });
 
@@ -174,34 +174,34 @@ export function TeamManagement() {
   };
 
   const handleAddMember = async (userId: string) => {
-    if (!selectedTeamId) return;
-    await addMember.mutate({ teamId: selectedTeamId, userId });
+    if (!selected_team_id) return;
+    await addMember.mutate({ teamId: selected_team_id, userId });
   };
 
   const handleRemoveMember = async (userId: string) => {
-    if (!selectedTeamId) return;
-    await removeMember.mutate({ teamId: selectedTeamId, userId });
+    if (!selected_team_id) return;
+    await removeMember.mutate({ teamId: selected_team_id, userId });
   };
 
   const handleDeleteTeam = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTeamId) return;
-    await deleteTeam.mutate(selectedTeamId);
+    if (!selected_team_id) return;
+    await deleteTeam.mutate(selected_team_id);
   };
 
   const handleAddTag = async (tag: string) => {
-    if (!selectedTeamId) return;
+    if (!selected_team_id) return;
     
     // Check if tag already exists in the selected team
-    const selectedTeam = teams?.find(t => t.id === selectedTeamId);
+    const selectedTeam = teams?.find(t => t.id === selected_team_id);
     if (selectedTeam?.tags.includes(tag)) return;
     
-    await addTags.mutate({ teamId: selectedTeamId, tags: [tag] });
+    await addTags.mutate({ teamId: selected_team_id, tags: [tag] });
   };
 
   const handleRemoveTag = async (tag: string) => {
-    if (!selectedTeamId) return;
-    await removeTags.mutate({ teamId: selectedTeamId, tags: [tag] });
+    if (!selected_team_id) return;
+    await removeTags.mutate({ teamId: selected_team_id, tags: [tag] });
   };
 
   // Filter out current team members from eligible users
@@ -212,7 +212,7 @@ export function TeamManagement() {
   // Filter available tags based on input
   const filteredTags = availableTags
     .filter(tag => {
-      const selectedTeam = teams?.find(t => t.id === selectedTeamId);
+      const selectedTeam = teams?.find(t => t.id === selected_team_id);
       return tag.toLowerCase().includes(newTag.toLowerCase()) && 
         (!selectedTeam || !selectedTeam.tags.includes(tag));
     })
@@ -315,7 +315,7 @@ export function TeamManagement() {
                   </p>
                 </div>
                 <Dialog 
-                  open={isTeamDialogOpen && selectedTeamId === team.id} 
+                  open={isTeamDialogOpen && selected_team_id === team.id} 
                   onOpenChange={(open) => {
                     setIsTeamDialogOpen(open);
                     if (!open) setSelectedTeamId(null);

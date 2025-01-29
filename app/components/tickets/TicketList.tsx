@@ -2,9 +2,8 @@ import React from 'react';
 import { trpc } from '@/app/lib/trpc/client';
 import { TicketStatus, TicketPriority, SortConfig } from '@/app/types/tickets';
 import { useAuth } from '@/app/lib/auth/AuthContext';
-import { UserRole } from '@prisma/client';
 import { TicketDialog } from './TicketDialog';
-import { MessageCircle, SortAsc, Filter, X } from 'lucide-react';
+import { MessageCircle, SortAsc, Filter, X, Loader2 } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Checkbox } from '@/app/components/ui/checkbox';
 import {
@@ -37,30 +36,30 @@ import { RichTextContent } from '@/app/components/ui/rich-text-editor';
 // Define the raw ticket type as it comes from the server
 interface RawTicket {
   id: string;
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
   title: string;
   description: string;
-  descriptionHtml: string;
+  description_html: string;
   status: string;
   priority: string;
-  customerId: string;
-  assignedToId: string | null;
-  createdById: string;
+  customer_id: string;
+  assigned_to_id: string | null;
+  created_by_id: string;
   tags: string[];
-  createdBy: {
+  created_by: {
     name: string | null;
     email: string | null;
   };
-  assignedTo: {
+  assigned_to: {
     name: string | null;
     email: string | null;
   } | null;
-  lastUpdatedBy: {
+  last_updated_by: {
     name: string | null;
     email: string | null;
   };
-  messageCount: number;
+  message_count: number;
 }
 
 // Define the processed ticket type with proper enum types
@@ -80,6 +79,7 @@ const SORT_LABELS: Record<SortConfig['field'], string> = {
 };
 
 export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
+  const utils = trpc.useContext();
   const { role } = useAuth();
   const [showCompleted, setShowCompleted] = React.useState(false);
   const [sortConfig, setSortConfig] = React.useState<SortConfig[]>([
@@ -91,6 +91,8 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
   const [includeUntagged, setIncludeUntagged] = React.useState(false);
   const [isSortMenuOpen, setIsSortMenuOpen] = React.useState(false);
   const [filterByTeamTags, setFilterByTeamTags] = React.useState(false);
+  const [selectedTicket, setSelectedTicket] = React.useState<ProcessedTicket | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = React.useState(false);
 
   // Get user's team tags
   const { data: teamTags } = trpc.team.getUserTeamTags.useQuery(undefined, {
@@ -119,59 +121,65 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     isLoading,
     fetchNextPage,
     hasNextPage,
+    isFetchingNextPage,
   } = trpc.ticket.list.useInfiniteQuery(
     {
       limit: 10,
-      showCompleted,
-      sortBy: sortConfig[0]?.field === 'assignedToMe' 
+      show_completed: showCompleted,
+      sort_by: sortConfig[0]?.field === 'assignedToMe' 
         ? 'updated_at' 
         : sortConfig[0]?.field === 'updatedAt' 
           ? 'updated_at' 
           : sortConfig[0]?.field,
-      sortOrder: sortConfig[0]?.direction || 'desc',
+      sort_order: sortConfig[0]?.direction || 'desc',
       tags: selectedTags,
-      includeUntagged,
-      ...(filterByUser ? { filterByUser } : {})
+      include_untagged: includeUntagged,
+      ...(filterByUser ? { customer_id: filterByUser } : {})
     },
     {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.next_cursor,
     }
   );
 
-  // State for the dialog
-  const [selectedTicket, setSelectedTicket] = React.useState<ProcessedTicket | null>(null);
-
-  // Transform the data to handle string enums
   const tickets = React.useMemo((): ProcessedTicket[] => {
     if (!data?.pages) return [];
     return data.pages.flatMap((page) => 
-      page.tickets.map((ticket): ProcessedTicket => ({
-        id: ticket.id,
-        title: ticket.title,
-        description: ticket.description,
-        descriptionHtml: ticket.descriptionHtml,
-        status: ticket.status as TicketStatus,
-        priority: ticket.priority as TicketPriority,
-        customerId: ticket.customerId,
-        assignedToId: ticket.assignedToId,
-        createdById: ticket.createdById,
-        tags: ticket.tags,
-        createdBy: {
-          name: ticket.createdBy?.name ?? null,
-          email: ticket.createdBy?.email ?? null
-        },
-        assignedTo: ticket.assignedTo ? {
-          name: ticket.assignedTo.name,
-          email: ticket.assignedTo.email
-        } : null,
-        lastUpdatedBy: {
-          name: ticket.lastUpdatedBy?.name ?? null,
-          email: ticket.lastUpdatedBy?.email ?? null
-        },
-        messageCount: ticket.messageCount,
-        createdAt: ticket.createdAt,
-        updatedAt: ticket.updatedAt
-      }))
+      page.tickets.map((rawTicket): ProcessedTicket => {
+        // Ensure the data matches our expected types
+        const ticket: RawTicket = {
+          id: rawTicket.id,
+          title: rawTicket.title,
+          description: rawTicket.description,
+          description_html: rawTicket.description_html,
+          status: rawTicket.status,
+          priority: rawTicket.priority,
+          customer_id: rawTicket.customer_id,
+          assigned_to_id: rawTicket.assigned_to_id,
+          created_by_id: rawTicket.created_by_id,
+          tags: Array.isArray(rawTicket.tags) ? rawTicket.tags : [],
+          created_by: {
+            name: rawTicket.created_by?.name ?? null,
+            email: rawTicket.created_by?.email ?? null
+          },
+          assigned_to: rawTicket.assigned_to ? {
+            name: rawTicket.assigned_to.name ?? null,
+            email: rawTicket.assigned_to.email ?? null
+          } : null,
+          last_updated_by: {
+            name: rawTicket.last_updated_by?.name ?? null,
+            email: rawTicket.last_updated_by?.email ?? null
+          },
+          message_count: rawTicket.message_count,
+          created_at: rawTicket.created_at,
+          updated_at: rawTicket.updated_at
+        };
+
+        return {
+          ...ticket,
+          status: ticket.status as TicketStatus,
+          priority: ticket.priority as TicketPriority
+        };
+      })
     );
   }, [data?.pages]);
 
@@ -215,9 +223,20 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     );
   };
 
+  const handleLoadMore = () => {
+    if (!isFetchingNextPage) {
+      fetchNextPage();
+    }
+  };
+
+  const handleTicketClick = (ticket: ProcessedTicket) => {
+    setSelectedTicket(ticket);
+    setIsDialogOpen(true);
+  };
+
   if (isLoading) {
     return <div className="flex justify-center items-center p-8">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      <Loader2 className="h-8 w-8 animate-spin text-gray-900" />
     </div>;
   }
 
@@ -226,7 +245,7 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
       <div className="space-y-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
           <h2 className="text-2xl font-bold">
-            {role === UserRole.CUSTOMER ? 'My Tickets' : 'All Tickets'}
+            {role === 'CUSTOMER' ? 'My Tickets' : 'All Tickets'}
           </h2>
           <div className="flex flex-wrap items-center gap-4">
             {/* Show completed tickets toggle */}
@@ -273,7 +292,7 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
         <h2 className="text-2xl font-bold">
-          {role === UserRole.CUSTOMER ? 'My Tickets' : 'All Tickets'}
+          {role === 'CUSTOMER' ? 'My Tickets' : 'All Tickets'}
         </h2>
         <div className="flex flex-wrap items-center gap-4">
           {/* Show completed tickets toggle */}
@@ -397,34 +416,34 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
           <div
             key={ticket.id}
             className="p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow cursor-pointer"
-            onClick={() => setSelectedTicket(ticket)}
+            onClick={() => handleTicketClick(ticket)}
           >
             <div className="flex justify-between items-start">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <h3 className="font-semibold text-gray-900">{ticket.title}</h3>
-                  {ticket.messageCount > 0 && (
+                  {ticket.message_count > 0 && (
                     <div className="flex items-center gap-1 text-sm text-blue-600">
                       <MessageCircle className="h-4 w-4" />
-                      <span>{ticket.messageCount}</span>
+                      <span>{ticket.message_count}</span>
                     </div>
                   )}
                 </div>
                 <div className="text-gray-800 text-sm prose prose-sm max-w-none">
-                  <RichTextContent content={ticket.descriptionHtml || ticket.description} />
+                  <RichTextContent content={ticket.description_html || ticket.description} />
                 </div>
                 
                 {/* Show customer and assigned agent info for non-customers */}
-                {role !== UserRole.CUSTOMER && (
+                {role !== 'CUSTOMER' && (
                   <div className="text-sm text-gray-600 space-y-1">
                     <p>
                       <span className="font-medium">Customer:</span>{' '}
-                      {ticket.createdBy.name || ticket.createdBy.email}
+                      {ticket.created_by.name || ticket.created_by.email}
                     </p>
                     <p>
                       <span className="font-medium">Assigned to:</span>{' '}
-                      {ticket.assignedTo
-                        ? ticket.assignedTo.name || ticket.assignedTo.email
+                      {ticket.assigned_to
+                        ? ticket.assigned_to.name || ticket.assigned_to.email
                         : 'Unassigned'}
                     </p>
                   </div>
@@ -478,10 +497,10 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
             </div>
             
             <div className="mt-4 text-sm text-gray-500">
-              <div>Created: {new Date(ticket.createdAt).toLocaleDateString()}</div>
+              <div>Created: {new Date(ticket.created_at).toLocaleDateString()}</div>
               <div className="flex items-center gap-1">
-                <span>Last updated: {new Date(ticket.updatedAt).toLocaleString()}</span>
-                <span>by {ticket.lastUpdatedBy.name || ticket.lastUpdatedBy.email}</span>
+                <span>Last updated: {new Date(ticket.updated_at).toLocaleString()}</span>
+                <span>by {ticket.last_updated_by.name || ticket.last_updated_by.email}</span>
               </div>
             </div>
           </div>
@@ -489,22 +508,38 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
       </div>
       
       {hasNextPage && (
-        <div className="mt-4 text-center">
-          <button
-            onClick={() => fetchNextPage()}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+        <div className="flex justify-center">
+          <Button
+            variant="outline"
+            onClick={handleLoadMore}
+            disabled={isFetchingNextPage}
           >
-            Load More
-          </button>
+            {isFetchingNextPage ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              'Load More'
+            )}
+          </Button>
         </div>
       )}
 
       {selectedTicket && (
         <TicketDialog
           ticket={selectedTicket}
-          open={!!selectedTicket}
-          onOpenChange={(open) => !open && setSelectedTicket(null)}
-          onTicketUpdated={() => setSelectedTicket(null)}
+          open={isDialogOpen}
+          onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) {
+              setSelectedTicket(null);
+            }
+          }}
+          onTicketUpdated={() => {
+            // Refetch tickets after update
+            utils.ticket.list.invalidate();
+          }}
         />
       )}
     </div>

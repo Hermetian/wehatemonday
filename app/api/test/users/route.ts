@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/app/prisma';
 import { generateTestUserData, TestUserConfig } from '@/app/lib/utils/test-data-generator';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
-import { Prisma } from '@prisma/client';
 import { supabaseAdmin } from '@/app/lib/auth/supabase';
 
 export async function POST(request: Request) {
@@ -10,13 +8,14 @@ export async function POST(request: Request) {
     const config: TestUserConfig = await request.json();
     const testUsers = generateTestUserData(config);
     
-    const createdUsers = await prisma.$transaction(
-      testUsers.map(userData => 
-        prisma.user.create({
-          data: userData as Prisma.UserCreateInput
-        })
-      )
-    );
+    // Create users
+    const { data: createdUsers, error: createError } = await supabaseAdmin
+      .from('users')
+      .insert(testUsers)
+      .select();
+
+    if (createError) throw createError;
+    if (!createdUsers?.length) throw new Error('No users created');
 
     // Create audit logs for test users
     await Promise.all(
@@ -36,7 +35,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ 
       success: true, 
       users: createdUsers,
-      batchId: testUsers[0].testBatchId 
+      batchId: testUsers[0].test_batch_id 
     });
   } catch (error) {
     console.error('Test user creation error:', error);
@@ -52,52 +51,74 @@ export async function DELETE(request: Request) {
     const { batchId } = await request.json();
 
     // Find all users in the batch
-    const usersToDelete = await prisma.user.findMany({
-      where: {
-        testBatchId: batchId
-      } as Prisma.UserWhereInput
-    });
+    const { data: usersToDelete, error: findError } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('test_batch_id', batchId);
 
-    // Delete all related data in a transaction
-    await prisma.$transaction(async (tx) => {
-      // Delete audit logs
-      await tx.auditLog.deleteMany({
-        where: {
-          userId: {
-            in: usersToDelete.map(u => u.id)
-          }
-        }
+    if (findError) throw findError;
+    if (!usersToDelete?.length) {
+      return NextResponse.json({ 
+        success: true,
+        deletedCount: 0
       });
+    }
 
-      // Delete messages
-      await tx.message.deleteMany({
-        where: {
-          ticket: {
-            OR: [
-              { createdById: { in: usersToDelete.map(u => u.id) } },
-              { assignedToId: { in: usersToDelete.map(u => u.id) } }
-            ]
-          }
-        }
-      });
+    const userIds = usersToDelete.map(u => u.id);
 
-      // Delete tickets
-      await tx.ticket.deleteMany({
-        where: {
-          OR: [
-            { createdById: { in: usersToDelete.map(u => u.id) } },
-            { assignedToId: { in: usersToDelete.map(u => u.id) } }
-          ]
-        }
-      });
+    // Find all tickets associated with these users
+    const { data: userTickets, error: ticketQueryError } = await supabaseAdmin
+      .from('tickets')
+      .select('id')
+      .or(`created_by_id.in.(${userIds}),assigned_to_id.in.(${userIds})`);
 
-      // Delete users
-      await tx.user.deleteMany({
-        where: {
-          testBatchId: batchId
-        } as Prisma.UserWhereInput
-      });
-    });
+    if (ticketQueryError) throw ticketQueryError;
+
+    // Delete related data in order due to foreign key constraints
+    if (userTickets?.length) {
+      const ticketIds = userTickets.map(t => t.id);
+
+      // Delete audit logs for tickets
+      const { error: ticketAuditError } = await supabaseAdmin
+        .from('audit_logs')
+        .delete()
+        .eq('entity', 'TICKET')
+        .in('entity_id', ticketIds);
+      
+      if (ticketAuditError) throw ticketAuditError;
+
+      // Delete tickets (messages will be deleted by cascade)
+      const { error: ticketError } = await supabaseAdmin
+        .from('tickets')
+        .delete()
+        .or(`created_by_id.in.(${userIds}),assigned_to_id.in.(${userIds})`);
+
+      if (ticketError) throw ticketError;
+    }
+
+    // Delete team memberships
+    const { error: teamMemberError } = await supabaseAdmin
+      .from('team_members')
+      .delete()
+      .in('user_id', userIds);
+
+    if (teamMemberError) throw teamMemberError;
+
+    // Delete audit logs for users
+    const { error: userAuditError } = await supabaseAdmin
+      .from('audit_logs')
+      .delete()
+      .in('user_id', userIds);
+
+    if (userAuditError) throw userAuditError;
+
+    // Finally delete users
+    const { error: userError } = await supabaseAdmin
+      .from('users')
+      .delete()
+      .eq('test_batch_id', batchId);
+
+    if (userError) throw userError;
 
     return NextResponse.json({ 
       success: true,

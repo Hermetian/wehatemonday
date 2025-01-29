@@ -326,10 +326,9 @@ export function UserSettings() {
                   <SelectContent className="bg-[#1E2D3D] border-[#1E2D3D]">
                     {VALID_ROLES.map((r) => (
                       <SelectItem key={r} value={r} className="text-foreground hover:bg-[#0A1A2F]">
-                        <div className="flex items-center gap-2">
-                          <StatusBadge role={r} />
+                        <StatusBadge role={r}>
                           {r}
-                        </div>
+                        </StatusBadge>
                       </SelectItem>
                     ))}
                   </SelectContent>

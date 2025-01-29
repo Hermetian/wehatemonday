@@ -1,59 +1,65 @@
-import { PrismaClient, Prisma } from '@prisma/client';
+import { supabase } from '@/app/lib/auth/supabase';
 
-export async function cleanupExpiredTestData(prisma: PrismaClient) {
+export async function cleanupExpiredTestData() {
   try {
     // Find all expired test users
-    const expiredUsers = await prisma.user.findMany({
-      where: {
-        testBatchId: { not: null },
-        cleanupAt: { lte: new Date() }
-      } as Prisma.UserWhereInput
-    });
+    const { data: expiredUsers, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .not('test_batch_id', 'is', null)
+      .lte('cleanup_at', new Date().toISOString());
 
-    if (expiredUsers.length === 0) {
+    if (userError) throw userError;
+    if (!expiredUsers?.length) {
       return { success: true, deletedCount: 0 };
     }
 
-    // Delete all related data in a transaction
-    await prisma.$transaction(async (tx) => {
-      // Delete audit logs
-      await tx.auditLog.deleteMany({
-        where: {
-          userId: {
-            in: expiredUsers.map(u => u.id)
-          }
-        }
-      });
+    const userIds = expiredUsers.map(u => u.id);
 
-      // Delete messages
-      await tx.message.deleteMany({
-        where: {
-          ticket: {
-            OR: [
-              { createdById: { in: expiredUsers.map(u => u.id) } },
-              { assignedToId: { in: expiredUsers.map(u => u.id) } }
-            ]
-          }
-        }
-      });
+    // Delete all related data in order due to foreign key constraints
+    // 1. Delete audit logs
+    const { error: auditError } = await supabase
+      .from('audit_logs')
+      .delete()
+      .in('user_id', userIds);
+    if (auditError) throw auditError;
 
-      // Delete tickets
-      await tx.ticket.deleteMany({
-        where: {
-          OR: [
-            { createdById: { in: expiredUsers.map(u => u.id) } },
-            { assignedToId: { in: expiredUsers.map(u => u.id) } }
-          ]
-        }
-      });
+    // 2. Delete team memberships
+    const { error: teamMemberError } = await supabase
+      .from('team_members')
+      .delete()
+      .in('user_id', userIds);
+    if (teamMemberError) throw teamMemberError;
 
-      // Delete users
-      await tx.user.deleteMany({
-        where: {
-          id: { in: expiredUsers.map(u => u.id) }
-        }
-      });
-    });
+    // 3. Delete messages (through tickets)
+    const { data: userTickets, error: ticketQueryError } = await supabase
+      .from('tickets')
+      .select('id')
+      .or(`created_by_id.in.(${userIds}),assigned_to_id.in.(${userIds})`);
+    if (ticketQueryError) throw ticketQueryError;
+
+    if (userTickets?.length) {
+      const ticketIds = userTickets.map(t => t.id);
+      const { error: messageError } = await supabase
+        .from('messages')
+        .delete()
+        .in('ticket_id', ticketIds);
+      if (messageError) throw messageError;
+
+      // 4. Delete tickets
+      const { error: ticketError } = await supabase
+        .from('tickets')
+        .delete()
+        .or(`created_by_id.in.(${userIds}),assigned_to_id.in.(${userIds})`);
+      if (ticketError) throw ticketError;
+    }
+
+    // 5. Finally delete users
+    const { error: userDeleteError } = await supabase
+      .from('users')
+      .delete()
+      .in('id', userIds);
+    if (userDeleteError) throw userDeleteError;
 
     return {
       success: true,

@@ -1,11 +1,12 @@
-import { UserRole, PrismaClient, Prisma } from '@prisma/client';
+import { Role } from '@/app/types/auth';
 import { v4 as uuidv4 } from 'uuid';
 import { WeightedItem, selectWeighted } from './test-data-generator';
+import { supabase } from '@/app/lib/auth/supabase';
 
 export interface TestTicketConfig {
   ticketCount?: number;
-  originatingRole?: WeightedItem<UserRole>[];
-  assignedRole?: WeightedItem<UserRole>[];
+  originatingRole?: WeightedItem<Role>[];
+  assignedRole?: WeightedItem<Role>[];
   testBatchId?: string;
   status?: WeightedItem<string>[];
   priority?: WeightedItem<string>[];
@@ -47,49 +48,51 @@ const DEFAULT_DESCRIPTIONS = [
   "Update process failed to complete"
 ];
 
-async function findTestUser(prisma: PrismaClient, role: UserRole, batchId?: string): Promise<string> {
+async function findTestUser(role: Role, batchId?: string): Promise<string> {
   // First try to find a user with the exact batch ID
   if (batchId) {
-    const exactUser = await prisma.user.findFirst({
-      where: {
-        role,
-        testBatchId: batchId
-      },
-      select: { id: true }
-    });
-    if (exactUser) return exactUser.id;
+    const { data: exactUser, error: exactError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('role', role)
+      .eq('test_batch_id', batchId)
+      .limit(1)
+      .single();
+    
+    if (!exactError && exactUser) return exactUser.id;
   }
 
   // Then try to find any test user with the correct role
-  const testUser = await prisma.user.findFirst({
-    where: {
-      role,
-      testBatchId: { not: null }
-    },
-    select: { id: true }
-  });
-  if (testUser) return testUser.id;
+  const { data: testUser, error: roleError } = await supabase
+    .from('users')
+    .select('id')
+    .eq('role', role)
+    .not('test_batch_id', 'is', null)
+    .limit(1)
+    .single();
+
+  if (!roleError && testUser) return testUser.id;
 
   // Finally, try to find any test user
-  const anyTestUser = await prisma.user.findFirst({
-    where: {
-      testBatchId: { not: null }
-    },
-    select: { id: true }
-  });
+  const { data: anyTestUser, error: anyError } = await supabase
+    .from('users')
+    .select('id')
+    .not('test_batch_id', 'is', null)
+    .limit(1)
+    .single();
 
-  if (!anyTestUser) {
+  if (anyError || !anyTestUser) {
     throw new Error('No test users available');
   }
 
   return anyTestUser.id;
 }
 
-export async function generateTestTicketData(prisma: PrismaClient, config: TestTicketConfig) {
+export async function generateTestTicketData(config: TestTicketConfig) {
   const {
     ticketCount = 1,
-    originatingRole = [{ value: UserRole.CUSTOMER, weight: 1 }],
-    assignedRole = [{ value: UserRole.AGENT, weight: 1 }],
+    originatingRole = [{ value: 'CUSTOMER', weight: 1 }],
+    assignedRole = [{ value: 'AGENT', weight: 1 }],
     testBatchId,
     status = [{ value: "OPEN", weight: 1 }],
     priority = [{ value: "MEDIUM", weight: 1 }],
@@ -106,37 +109,34 @@ export async function generateTestTicketData(prisma: PrismaClient, config: TestT
       const createdByRole = selectWeighted(originatingRole);
       const assignedToRole = selectWeighted(assignedRole);
 
-      const createdById = await findTestUser(prisma, createdByRole, testBatchId);
-      const assignedToId = await findTestUser(prisma, assignedToRole, testBatchId);
+      const createdById = await findTestUser(createdByRole, testBatchId);
+      const assignedToId = await findTestUser(assignedToRole, testBatchId);
 
-      const ticketData: Omit<Prisma.TicketUncheckedCreateInput, 'metadata'> = {
+      const ticketData = {
         title: `[TEST] ${DEFAULT_TITLES[index % DEFAULT_TITLES.length]}`,
         description: DEFAULT_DESCRIPTIONS[index % DEFAULT_DESCRIPTIONS.length],
+        description_html: DEFAULT_DESCRIPTIONS[index % DEFAULT_DESCRIPTIONS.length],
         status: selectWeighted(status),
         priority: selectWeighted(priority),
-        createdById,
-        assignedToId,
-        customerId: createdById,
+        created_by_id: createdById,
+        assigned_to_id: assignedToId,
+        customer_id: createdById,
         tags: tags.map(tagGroup => 
           tagGroup.length ? selectWeighted(tagGroup) : null
         ).filter(Boolean) as string[],
-        testBatchId: batchId,
-        cleanupAt,
-        createdAt: creationTime,
-        updatedAt: creationTime
+        test_batch_id: batchId,
+        cleanup_at: cleanupAt.toISOString(),
+        created_at: creationTime.toISOString(),
+        updated_at: creationTime.toISOString(),
+        metadata: {
+          isTest: true,
+          batchId,
+          originatingRole: createdByRole,
+          assignedRole: assignedToRole
+        } as TestTicketMetadata
       };
 
-      const metadata: Prisma.InputJsonValue = {
-        isTest: true,
-        batchId,
-        originatingRole: createdByRole as string,
-        assignedRole: assignedToRole as string
-      } satisfies TestTicketMetadata;
-
-      return {
-        ...ticketData,
-        metadata
-      };
+      return ticketData;
     })
   );
 

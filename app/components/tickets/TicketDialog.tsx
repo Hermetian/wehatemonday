@@ -51,17 +51,17 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
   // Form state
   const [title, setTitle] = React.useState(ticket.title);
   const [description, setDescription] = React.useState(ticket.description);
-  const [descriptionHtml, setDescriptionHtml] = React.useState(ticket.descriptionHtml);
+  const [description_html, setDescriptionHtml] = React.useState(ticket.description_html);
   const [status, setStatus] = React.useState<TicketStatus>(ticket.status);
   const [priority, setPriority] = React.useState<TicketPriority>(ticket.priority);
-  const [assignedToId, setAssignedToId] = React.useState<string | null>(ticket.assignedToId);
+  const [assigned_to_id, setAssignedToId] = React.useState<string | null>(ticket.assigned_to_id);
   const [tags, setTags] = React.useState(ticket.tags);
   const [newTag, setNewTag] = React.useState('');
   const [isEditing, setIsEditing] = React.useState(false);
 
   // Get staff users and customer for assignment
   const { data: assignableUsers } = trpc.ticket.getAssignableUsers.useQuery(
-    { ticketId: ticket.id },
+    { ticket_id: ticket.id },
     {
       enabled: role ? ASSIGNMENT_ROLES.includes(role as typeof ASSIGNMENT_ROLES[number]) : false,
     }
@@ -85,22 +85,29 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
     
     // Only include changed fields
     if (description !== ticket.description) updates.description = description;
-    if (descriptionHtml !== ticket.descriptionHtml) updates.descriptionHtml = descriptionHtml;
+    if (description_html !== ticket.description_html) updates.description_html = description_html;
     if (canEditAll) {
-      if (title !== ticket.title) updates.title = title;
-      if (status !== ticket.status) updates.status = status;
-      if (priority !== ticket.priority) updates.priority = priority;
-      if (JSON.stringify(tags) !== JSON.stringify(ticket.tags)) updates.tags = tags;
+    if (title !== ticket.title) updates.title = title;
+    if (status !== ticket.status) updates.status = status;
+    if (priority !== ticket.priority) updates.priority = priority;
+    if (JSON.stringify(tags) !== JSON.stringify(ticket.tags)) updates.tags = tags;
     }
-    if (canAssign && assignedToId !== ticket.assignedToId) {
-      updates.assignedToId = assignedToId;
+    
+    if (canAssign && assigned_to_id !== ticket.assigned_to_id) {
+      updates.assigned_to_id = assigned_to_id;
     }
 
     if (Object.keys(updates).length > 0) {
-      await updateMutation.mutateAsync({
-        id: ticket.id,
-        ...updates,
-      });
+      try {
+        await updateMutation.mutateAsync({
+          id: ticket.id,
+          ...updates,
+        });
+        setIsEditing(false); // Close editor on successful save
+        onOpenChange(false); // Close the dialog
+      } catch (error) {
+        console.error('Failed to update ticket:', error);
+      }
     }
   };
 
@@ -167,7 +174,7 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                   </div>
                 ) : (
                   <div className="prose prose-sm max-w-none bg-gray-50 rounded-lg p-4 border border-gray-200 text-gray-900">
-                    <RichTextContent content={ticket.descriptionHtml || ticket.description} />
+                    <RichTextContent content={ticket.description_html || ticket.description} />
                   </div>
                 )}
               </div>
@@ -251,9 +258,9 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
 
             {canAssign && assignableUsers && (
               <div className="space-y-2">
-                <Label htmlFor="assignedTo" className="text-gray-700">Assigned To</Label>
+                <Label htmlFor="assigned_to" className="text-gray-700">Assigned To</Label>
                 <Select 
-                  value={assignedToId || 'unassigned'} 
+                  value={assigned_to_id || 'unassigned'} 
                   onValueChange={(value: string) => setAssignedToId(value === 'unassigned' ? null : value)}
                 >
                   <SelectTrigger className="bg-white border-gray-200 text-gray-900">
@@ -267,8 +274,8 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                       <SelectItem key={user.id} value={user.id} className="text-gray-900 hover:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900">
                         <div className="flex items-center gap-2">
                           <span>{user.name || user.email}</span>
-                          <StatusBadge role={user.isCustomer ? 'CUSTOMER' : user.role}>
-                            {user.isCustomer ? 'CUSTOMER' : user.role}
+                          <StatusBadge role={user.is_customer ? 'CUSTOMER' : user.role}>
+                            {user.is_customer ? 'CUSTOMER' : user.role}
                           </StatusBadge>
                         </div>
                       </SelectItem>
@@ -304,7 +311,7 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
           <div className="border-t border-gray-200 pt-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Messages</h3>
             <div className="text-gray-900 [&_.bg-yellow-50]:!bg-yellow-50 [&_.border-yellow-200]:!border-yellow-200 [&_.text-yellow-600]:!text-yellow-600">
-              <TicketMessages ticketId={ticket.id} />
+              <TicketMessages ticket_id={ticket.id} />
             </div>
           </div>
         </div>

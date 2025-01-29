@@ -1,4 +1,4 @@
-import { UserRole } from '@prisma/client';
+import { Role } from '@/app/types/auth';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface WeightedItem<T> {
@@ -10,7 +10,7 @@ export interface TestUserConfig {
   userCount?: number;
   email?: WeightedItem<string>[];
   name?: WeightedItem<string>[];
-  role?: WeightedItem<UserRole>[];
+  role?: WeightedItem<Role>[];
   creationTime?: Date;
   duration?: number;
   flags?: WeightedItem<string>[][];
@@ -74,7 +74,7 @@ export function generateTestUserData(config: TestUserConfig) {
     return {
       email: emailValue,
       name: name ? selectWeighted(name) : `Test User ${index + 1}`,
-      role: role ? selectWeighted(role) : UserRole.CUSTOMER,
+      role: role ? selectWeighted(role) : 'CUSTOMER',
       metadata: {
         isTest: true,
         batchId,
@@ -82,10 +82,10 @@ export function generateTestUserData(config: TestUserConfig) {
           flagGroup.length ? selectWeighted(flagGroup) : null
         ).filter(Boolean)
       },
-      testBatchId: batchId,
-      cleanupAt,
-      createdAt: creationTime,
-      updatedAt: creationTime
+      test_batch_id: batchId,
+      cleanup_at: cleanupAt.toISOString(),
+      created_at: creationTime.toISOString(),
+      updated_at: creationTime.toISOString()
     };
   });
 } 

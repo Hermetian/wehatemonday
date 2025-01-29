@@ -5,8 +5,8 @@ export const invalidateTicketCache = () => {
   revalidateTag(CACHE_KEYS.TICKET_LIST);
 };
 
-export const invalidateTicketDetail = (ticketId: string) => {
-  revalidateTag(`${CACHE_KEYS.TICKET_DETAIL}:${ticketId}`);
+export const invalidateTicketDetail = (ticket_id: string) => {
+  revalidateTag(`${CACHE_KEYS.TICKET_DETAIL}:${ticket_id}`);
 };
 
 export const invalidateUserCache = () => {

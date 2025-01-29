@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useAuth } from '@/app/lib/auth/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Role } from '@/app/types/auth';
@@ -18,7 +18,8 @@ import { Alert, AlertDescription } from "@/app/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 import { supabase } from '@/app/lib/auth/supabase';
 
-export default function Auth() {
+// Separate client component for handling search params
+function AuthContent() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -178,5 +179,18 @@ export default function Auth() {
         </form>
       </div>
     </div>
+  );
+}
+
+// Main page component with Suspense
+export default function Auth() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
+      </div>
+    }>
+      <AuthContent />
+    </Suspense>
   );
 } 

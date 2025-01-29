@@ -1,38 +1,43 @@
 import React from 'react';
 import { trpc } from '@/app/lib/trpc/client';
 import { useAuth } from '@/app/lib/auth/AuthContext';
-import { UserRole } from '@prisma/client';
+import { RichTextEditor, RichTextContent } from '@/app/components/ui/rich-text-editor';
 import { Button } from '@/app/components/ui/button';
-import { Label } from '@/app/components/ui/label';
-import { cn } from '@/app/lib/utils/common';
+import { Loader2 } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/app/components/ui/tooltip";
-import { RichTextEditor, RichTextContent } from '@/app/components/ui/rich-text-editor';
 import { Checkbox } from '@/app/components/ui/checkbox';
+import { Label } from '@/app/components/ui/label';
+import { cn } from '@/app/lib/utils/common';
+import { inferRouterInputs } from '@trpc/server';
+import type { AppRouter } from '@/app/lib/trpc/routers/_app';
+
+type MessageInput = inferRouterInputs<AppRouter>['message']['create'];
+//type Message = NonNullable<inferRouterOutputs<AppRouter>['message']['list']>[number];
 
 interface TicketMessagesProps {
-  ticketId: string;
+  ticket_id: string;
 }
 
-export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
+export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id }) => {
   const { role } = useAuth();
   const [content, setContent] = React.useState('');
-  const [contentHtml, setContentHtml] = React.useState('');
-  const [isInternal, setIsInternal] = React.useState(false);
+  const [content_html, setContentHtml] = React.useState('');
+  const [is_internal, setIsInternal] = React.useState(false);
   const utils = trpc.useContext();
 
-  const { data: messages, isLoading } = trpc.message.list.useQuery({ ticketId });
+  const { data: messages, isLoading } = trpc.message.list.useQuery({ ticket_id });
 
   const createMessage = trpc.message.create.useMutation({
     onSuccess: () => {
       setContent('');
       setContentHtml('');
       setIsInternal(false);
-      utils.message.list.invalidate({ ticketId });
+      utils.message.list.invalidate();
     },
   });
 
@@ -40,15 +45,17 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
     e.preventDefault();
     if (!content.trim()) return;
 
-    await createMessage.mutateAsync({
+    const messageInput: MessageInput = {
       content: content.trim(),
-      contentHtml,
-      ticketId,
-      isInternal,
-    });
+      content_html,
+      ticket_id,
+      is_internal,
+    };
+
+    await createMessage.mutateAsync(messageInput);
   };
 
-  const isStaff = role === UserRole.ADMIN || role === UserRole.MANAGER || role === UserRole.AGENT;
+  const isStaff = role === 'ADMIN' || role === 'MANAGER' || role === 'AGENT';
 
   return (
     <div className="space-y-6">
@@ -56,7 +63,7 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
       <div className="space-y-4">
         {isLoading ? (
           <div className="flex justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+            <Loader2 className="h-8 w-8 animate-spin text-gray-900" />
           </div>
         ) : messages && messages.length > 0 ? (
           messages.map((message) => (
@@ -64,23 +71,23 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
               key={message.id}
               className={cn(
                 "p-4 rounded-lg",
-                message.isInternal
+                message.is_internal
                   ? "bg-yellow-50 border border-yellow-200"
                   : "bg-white border border-gray-200"
               )}
             >
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
-                  <RichTextContent content={message.contentHtml || message.content} />
+                  <RichTextContent content={message.content_html || message.content} />
                   <p className="text-xs text-gray-500">
-                    {new Date(message.createdAt).toLocaleString(undefined, {
+                    {new Date(message.created_at).toLocaleString(undefined, {
                       year: 'numeric',
                       month: 'short',
                       day: 'numeric',
                       hour: '2-digit',
                       minute: '2-digit'
                     })}
-                    {message.isInternal && (
+                    {message.is_internal && (
                       <span className="ml-2 text-yellow-600 font-medium">
                         Internal Note
                       </span>
@@ -119,7 +126,7 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticketId }) => {
                 <div className="flex items-center space-x-2 bg-yellow-50 px-3 py-1.5 rounded-md w-fit hover:bg-yellow-100 transition-colors">
                   <Checkbox
                     id="internal"
-                    checked={isInternal}
+                    checked={is_internal}
                     onCheckedChange={(checked) => setIsInternal(checked as boolean)}
                     className="border-yellow-500 data-[state=checked]:bg-yellow-600 data-[state=checked]:border-yellow-600"
                   />

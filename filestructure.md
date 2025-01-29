@@ -4,8 +4,6 @@ wehatemonday
 ├── README.md
 ├── app
 │   ├── api
-│   │   ├── auth
-│   │   │   └── route.ts
 │   │   ├── test
 │   │   │   ├── cleanup
 │   │   │   │   └── route.ts
@@ -71,6 +69,7 @@ wehatemonday
 │   │   │   │   ├── team.ts
 │   │   │   │   ├── ticket.ts
 │   │   │   │   └── user.ts
+│   │   │   ├── transformer.ts
 │   │   │   └── trpc.ts
 │   │   └── utils
 │   │       ├── audit-logger.ts
@@ -81,7 +80,6 @@ wehatemonday
 │   │       ├── test-data-generator.ts
 │   │       └── test-ticket-generator.ts
 │   ├── page.tsx
-│   ├── prisma.ts
 │   ├── providers.tsx
 │   ├── teams
 │   │   └── page.tsx
@@ -89,9 +87,11 @@ wehatemonday
 │   │   └── create
 │   │       └── page.tsx
 │   └── types
+│       ├── auth.ts
 │       └── tickets.ts
 ├── components
 ├── components.json
+├── data_model.md
 ├── eslint.config.mjs
 ├── filestructure.md
 ├── lib
@@ -99,32 +99,30 @@ wehatemonday
 │   │   └── routers
 │   └── utils.ts
 ├── middleware.ts
+├── migrations
+│   ├── 20250126213255_create_user_role_enum.sql
+│   ├── 20250128210909_add_created_by_to_messages.sql
+│   └── dashboard_migration.sql
 ├── next-env.d.ts
 ├── next.config.ts
 ├── package-lock.json
 ├── package.json
 ├── postcss.config.mjs
-├── prisma
-│   ├── migrations
-│   │   ├── 0_init
-│   │   │   ├── migration.sql
-│   │   │   └── migration.toml
-│   │   ├── 20250125202432_add_last_updated_by
-│   │   │   └── migration.sql
-│   │   ├── 20250125205118_make_last_updated_by_optional
-│   │   │   └── migration.sql
-│   │   └── migration_lock.toml
-│   └── schema.prisma
 ├── public
 │   ├── file.svg
 │   ├── globe.svg
 │   ├── next.svg
 │   ├── vercel.svg
 │   └── window.svg
+├── supabase
+│   ├── config.toml
+│   └── functions
+│       └── sync_role.sql
 ├── tailwind.config.ts
 ├── terminal
 ├── tsconfig.json
 ├── tsconfig.tsbuildinfo
 └── wehatemonday.code-workspace
 
-##run tree -I 'node_modules|.next|.vercel' and copy/paste the output above
+##tree -I 'node_modules|.next|.vercel' 
+##Run this command and copy/paste the output above
