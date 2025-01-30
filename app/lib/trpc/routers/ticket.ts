@@ -5,6 +5,7 @@ import { TicketStatus, TicketPriority } from '@/app/types/tickets';
 import { Role} from '@/app/types/auth';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
 import { invalidateTicketCache, invalidateTicketDetail } from '@/app/lib/utils/cache-helpers';
+import { createAdminClient } from '@/app/lib/auth/supabase';
 
 // Role constants
 const STAFF_ROLES = ['ADMIN', 'MANAGER', 'AGENT'] as const;
@@ -46,13 +47,6 @@ interface TicketWithRelations {
   updated_at: string;
 }
 */
-// Sorting helpers
-const priorityOrder: Record<TicketPriority, number> = {
-  URGENT: 0,
-  HIGH: 1,
-  MEDIUM: 2,
-  LOW: 3,
-};
 
 export const ticketRouter = router({
   create: protectedProcedure 
@@ -76,8 +70,11 @@ export const ticketRouter = router({
           });
         }
 
+        // Use the admin client
+        const adminClient = createAdminClient();
+
         // Get ticket data from Supabase
-        const { data: ticket, error } = await ctx.supabase
+        const { data: ticket, error } = await adminClient
           .from('tickets')
           .insert([{
             ...input,
@@ -97,7 +94,7 @@ export const ticketRouter = router({
           userId: ctx.user.id,
           oldData: null,
           newData: ticket,
-          supabase: ctx.supabase
+          supabase: adminClient
         });
 
         // Invalidate ticket list cache
@@ -119,20 +116,17 @@ export const ticketRouter = router({
       limit: z.number().min(1).max(100).default(10),
       status: z.array(z.nativeEnum(TicketStatus)).optional(),
       priority: z.array(z.nativeEnum(TicketPriority)).optional(),
-      assigned_to_id: z.string().optional(),
-      team_id: z.string().optional(),
-      customer_id: z.string().optional(),
-      sort_by: z.enum(['priority', 'created_at', 'updated_at']).default('created_at'),
-      sort_order: z.enum(['asc', 'desc']).default('desc'),
-      show_completed: z.boolean().optional(),
-      tags: z.array(z.string()).optional(),
-      include_untagged: z.boolean().optional(),
+      tags: z.array(z.string()).default([]),
+      include_untagged: z.boolean().default(false),
       cursor: z.string().nullish(),
+      sort_by: z.enum(['created_at', 'updated_at']).default('updated_at'),
+      sort_order: z.enum(['asc', 'desc']).default('desc'),
+      show_completed: z.boolean().default(false)
     }))
     .query(async ({ ctx, input }) => {
       try {
-        // Build query
-        let query = ctx.supabase
+        // Use regular client to respect RLS
+        const query = ctx.supabase
           .from('tickets')
           .select(`
             *,
@@ -142,48 +136,42 @@ export const ticketRouter = router({
           `);
 
         // Apply filters
-        if (input.status?.length) {
-          query = query.in('status', input.status);
+        if (!input.show_completed) {
+          query.neq('status', 'CLOSED');
+        }
+        
+        if (input.status && input.status.length > 0) {
+          query.in('status', input.status);
         }
 
-        if (input.show_completed === false) {
-          query = query.neq('status', TicketStatus.CLOSED);
+        if (input.priority && input.priority.length > 0) {
+          query.in('priority', input.priority);
         }
 
-        if (input.priority?.length) {
-          query = query.in('priority', input.priority);
+        if (input.tags.length > 0) {
+          query.overlaps('tags', input.tags);
+        } else if (!input.include_untagged) {
+          query.not('tags', 'is', null);
         }
 
-        if (input.assigned_to_id) {
-          query = query.eq('assigned_to_id', input.assigned_to_id);
-        }
-
-        if (input.customer_id) {
-          query = query.eq('created_by_id', input.customer_id);
-        }
-
-        if (input.tags?.length) {
-          query = query.overlaps('tags', input.tags);
-        }
-
-        // Apply role-based filtering
-        if (!isStaffRole(ctx.user.role)) {
-          // Non-staff users can only see their own tickets
-          query = query.eq('created_by_id', ctx.user.id);
-        }
-
-        // Apply cursor-based pagination
+        // Handle pagination
         if (input.cursor) {
-          query = query.gt('id', input.cursor);
+          query.lt('id', input.cursor);
         }
 
-        // Get tickets with pagination
-        const { data: tickets, error } = await query
-          .order('id', { ascending: true })
-          .limit(input.limit + 1);
+        // Get one more than limit for cursor
+        query.limit(input.limit + 1);
+
+        // Apply sorting
+        if (input.sort_by === 'created_at') {
+          query.order('created_at', { ascending: input.sort_order === 'asc' });
+        } else if (input.sort_by === 'updated_at') {
+          query.order('updated_at', { ascending: input.sort_order === 'asc' });
+        }
+
+        const { data: tickets, error } = await query;
 
         if (error) {
-          console.error('Error fetching tickets:', error);
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Failed to fetch tickets',
@@ -191,98 +179,44 @@ export const ticketRouter = router({
           });
         }
 
-        if (!tickets) {
-          return {
-            tickets: [],
-            next_cursor: undefined
-          };
-        }
-
-        // Check if we have a next page
-        let next_cursor: string | undefined;
-        if (tickets.length > input.limit) {
-          const nextItem = tickets.pop(); // Remove the extra item
-          next_cursor = nextItem?.id;
-        }
-
+        // Use admin client only for additional metadata that doesn't need RLS
+        const adminClient = createAdminClient();
+        
         // Get last audit logs for tickets
         const ticketIds = tickets.map(t => t.id);
-        const { data: auditLogs, error: auditError } = await ctx.supabase
+        const { data: auditLogs } = await adminClient
           .from('audit_logs')
           .select('*')
           .in('entity_id', ticketIds)
           .eq('entity', 'TICKET')
           .order('timestamp', { ascending: false });
 
-        if (auditError) {
-          console.error('Error fetching audit logs:', auditError);
-          // Don't throw error, just proceed without audit logs
-          return {
-            tickets: tickets.map((ticket) => ({
-              ...ticket,
-              message_count: Array.isArray(ticket.messages) ? ticket.messages.length : 0,
-            })),
-            next_cursor
-          };
-        }
-
         // Create map of ticket ID to last updater
-        const lastUpdaterMap = new Map<string, { name: string | null; email: string | null; }>();
-        
+        const lastUpdaterMap = new Map();
         if (auditLogs) {
-          // Group audit logs by entity_id to get the latest for each ticket
-          const latestAuditLogs = auditLogs.reduce<Record<string, {
-            entity_id: string;
-            user_id: string;
-            timestamp: string;
-          }>>((acc, log) => {
-            if (!acc[log.entity_id] || new Date(log.timestamp) > new Date(acc[log.entity_id].timestamp)) {
-              acc[log.entity_id] = log;
-            }
-            return acc;
-          }, {});
-
-          // Fetch all unique user IDs at once
-          const userIds = [...new Set(Object.values(latestAuditLogs).map(log => log.user_id))];
-          const { data: users } = await ctx.supabase
-            .from('users')
-            .select('id, name, email')
-            .in('id', userIds);
-
-          if (users) {
-            const userMap = new Map(users.map(user => [user.id, user]));
-            
-            // Map users to tickets
-            for (const [ticketId, log] of Object.entries(latestAuditLogs)) {
-              const user = userMap.get(log.user_id);
-              if (user) {
-                lastUpdaterMap.set(ticketId, {
-                  name: user.name,
-                  email: user.email
-                });
-              }
+          for (const log of auditLogs) {
+            if (!lastUpdaterMap.has(log.entity_id)) {
+              lastUpdaterMap.set(log.entity_id, {
+                name: log.user_name,
+                email: log.user_email
+              });
             }
           }
         }
 
-        // Sort tickets if needed
-        if (input.sort_by === 'priority') {
-          tickets.sort((a, b) => {
-            const orderA = priorityOrder[a.priority as TicketPriority] ?? 999;
-            const orderB = priorityOrder[b.priority as TicketPriority] ?? 999;
-            return input.sort_order === 'asc' ? orderA - orderB : orderB - orderA;
-          });
-        }
+        // Check if we have an extra item for cursor
+        const hasNextPage = tickets.length > input.limit;
+        const items = hasNextPage ? tickets.slice(0, -1) : tickets;
 
-        // Return tickets with proper types
         return {
-          tickets: tickets.map((ticket) => ({
+          tickets: items.map((ticket) => ({
             ...ticket,
             message_count: Array.isArray(ticket.messages) ? ticket.messages.length : 0,
             last_updated_by: lastUpdaterMap.get(ticket.id) || { name: null, email: null }
           })),
-          next_cursor
+          nextCursor: hasNextPage ? items[items.length - 1].id : undefined
         };
+
       } catch (error) {
         console.error('Error in ticket.list:', error);
         if (error instanceof TRPCError) throw error;
@@ -311,7 +245,10 @@ export const ticketRouter = router({
       try {
         const { id, ...updateData } = input;
 
-        const { data: ticket, error } = await ctx.supabase
+        // Use the admin client
+        const adminClient = createAdminClient();
+
+        const { data: ticket, error } = await adminClient
           .from('tickets')
           .update(updateData)
           .eq('id', id)
@@ -331,7 +268,7 @@ export const ticketRouter = router({
           userId: ctx.user.id,
           oldData: input,
           newData: ticket,
-          supabase: ctx.supabase
+          supabase: adminClient
         });
 
         // Invalidate both list and detail caches
@@ -366,8 +303,11 @@ export const ticketRouter = router({
           });
         }
 
+        // Use the admin client
+        const adminClient = createAdminClient();
+
         // Get ticket and customer data in sequence to avoid undefined ticket
-        const { data: ticket, error: ticketError } = await ctx.supabase
+        const { data: ticket, error: ticketError } = await adminClient
           .from('tickets')
           .select('customer_id')
           .eq('id', input.ticket_id)
@@ -382,13 +322,13 @@ export const ticketRouter = router({
 
         // Get staff users and customer
         const [{ data: staffUsers }, { data: customer }] = await Promise.all([
-          ctx.supabase
+          adminClient
             .from('users')
             .select('id, name, email, role')
             .in('role', ASSIGNABLE_ROLES)
             .order('role', { ascending: true })
             .order('name', { ascending: true }),
-          ctx.supabase
+          adminClient
             .from('users')
             .select('id, name, email, role')
             .eq('id', ticket.customer_id)
@@ -421,9 +361,12 @@ export const ticketRouter = router({
     }),
 
   getAllTags: protectedProcedure
-    .query(async ({ ctx }) => {
+    .query(async () => {
       try {
-        const { data: tickets, error } = await ctx.supabase
+        // Use the admin client
+        const adminClient = createAdminClient();
+
+        const { data: tickets, error } = await adminClient
           .from('tickets')
           .select('tags');
 

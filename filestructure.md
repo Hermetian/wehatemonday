@@ -1,12 +1,12 @@
 Directory structure of wehatemonday project, excluding auto-generated files like node_modules, .next, .vercel
 
 wehatemonday
+.
 ├── README.md
 ├── app
 │   ├── api
 │   │   ├── test
 │   │   │   ├── cleanup
-│   │   │   │   └── route.ts
 │   │   │   ├── tickets
 │   │   │   │   └── route.ts
 │   │   │   └── users
@@ -117,6 +117,11 @@ wehatemonday
 ├── supabase
 │   ├── config.toml
 │   └── functions
+│       ├── cleanup-expired-test-data
+│       │   ├── deno.json
+│       │   ├── import_map.json
+│       │   └── index.ts
+│       ├── schedule_cleanup.sql
 │       └── sync_role.sql
 ├── tailwind.config.ts
 ├── terminal

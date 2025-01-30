@@ -2,13 +2,15 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/app/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/app/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/app/components/ui/dialog";
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
 import { trpc } from "@/app/lib/trpc/client";
 import { Role, VALID_ROLES } from "@/app/types/auth";
+import { useAuth } from "@/app/lib/auth/AuthContext";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/app/components/ui/alert-dialog";
+import { StatusBadge } from "@/app/components/ui/status-badge";
 
 // Simplified types to avoid deep type instantiation
 type BasicUser = {
@@ -26,6 +28,9 @@ type BasicTeam = {
 };
 
 export function TeamManagement() {
+  const { role } = useAuth();
+  const isManager = role === 'MANAGER' || role === 'ADMIN';
+
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
   const [selected_team_id, setSelectedTeamId] = useState<string | null>(null);
@@ -204,20 +209,6 @@ export function TeamManagement() {
     await removeTags.mutate({ teamId: selected_team_id, tags: [tag] });
   };
 
-  // Filter out current team members from eligible users
-  const filteredEligibleUsers = eligibleUsers?.filter(user => 
-    !teamMembers?.some(member => member.user.id === user.id)
-  );
-
-  // Filter available tags based on input
-  const filteredTags = availableTags
-    .filter(tag => {
-      const selectedTeam = teams?.find(t => t.id === selected_team_id);
-      return tag.toLowerCase().includes(newTag.toLowerCase()) && 
-        (!selectedTeam || !selectedTeam.tags.includes(tag));
-    })
-    .slice(0, 5); // Limit to 5 suggestions
-
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault(); // Prevent form submission
@@ -253,316 +244,387 @@ export function TeamManagement() {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       const prevSibling = e.currentTarget.previousElementSibling as HTMLButtonElement;
-      if (prevSibling) {
-        prevSibling.focus();
-      } else {
+      if (prevSibling) prevSibling.focus();
+      else {
         tagInputRef.current?.focus();
       }
     }
   };
 
+  const filteredEligibleUsers = eligibleUsers?.filter(user => 
+    !teamMembers?.some(member => member.user.id === user.id)
+  );
+
+  const filteredTags = availableTags
+    .filter(tag => {
+      const selectedTeam = teams?.find(t => t.id === selected_team_id);
+      return tag.toLowerCase().includes(newTag.toLowerCase()) && 
+        (!selectedTeam || !selectedTeam.tags.includes(tag));
+    })
+    .slice(0, 5); // Limit to 5 suggestions
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>Create New Team</Button>
-          </DialogTrigger>
-          <DialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">
-            <DialogHeader>
-              <DialogTitle className="text-foreground">Create New Team</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreateTeam} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="teamName" className="text-foreground">Team Name</Label>
-                <Input
-                  id="teamName"
-                  value={teamName}
-                  onChange={(e) => setTeamName(e.target.value)}
-                  placeholder="Enter team name"
-                  required
-                  className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground"
-                />
-              </div>
-              <Button 
-                type="submit" 
-                className="w-full"
-                disabled={createTeam.isLoading}
-              >
-                {createTeam.isLoading ? "Creating..." : "Create Team"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">Teams</h2>
+        {isManager && (
+          <Button onClick={() => setIsCreateDialogOpen(true)}>
+            Create New Team
+          </Button>
+        )}
       </div>
 
-      {loadingTeams ? (
-        <div>Loading teams...</div>
-      ) : !teams?.length ? (
-        <div>No teams found. Create your first team to get started!</div>
-      ) : (
-        <div className="space-y-4">
-          {teams.map((team) => (
+      <div className="grid gap-4">
+        {loadingTeams ? (
+          <div>Loading teams...</div>
+        ) : teams?.length === 0 ? (
+          <div>No teams found.</div>
+        ) : (
+          teams?.map((team) => (
             <div
-              key={`team-${team.id}`}
-              className="p-4 border rounded-lg shadow-sm hover:shadow-md transition-shadow bg-background"
+              key={team.id}
+              className="p-4 rounded-lg border border-[#1E2D3D] bg-[#1E2D3D] space-y-4"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex justify-between items-start">
                 <div>
                   <h3 className="text-lg font-semibold text-foreground">{team.name}</h3>
                   <p className="text-sm text-muted-foreground">
-                    {team.members.length} members
+                    {team.members.length} member{team.members.length !== 1 ? 's' : ''}
                   </p>
                 </div>
-                <Dialog 
-                  open={isTeamDialogOpen && selected_team_id === team.id} 
-                  onOpenChange={(open) => {
-                    setIsTeamDialogOpen(open);
-                    if (!open) setSelectedTeamId(null);
-                  }}
-                >
-                  <DialogTrigger asChild>
-                    <Button 
+                {isManager && (
+                  <div className="space-x-2">
+                    <Button
                       variant="outline"
-                      onClick={() => setSelectedTeamId(team.id)}
+                      onClick={() => {
+                        setSelectedTeamId(team.id);
+                        setIsTeamDialogOpen(true);
+                      }}
+                      className="bg-blue-500 hover:bg-blue-600 text-white border-0 transition-colors"
                     >
                       Manage Team
                     </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-2xl bg-[#0A1A2F] border-[#1E2D3D]">
-                    <DialogHeader>
-                      <DialogTitle className="text-foreground">Manage Team - {team.name}</DialogTitle>
-                      <DialogDescription className="text-muted-foreground">
-                        Manage team members and settings
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-6">
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-center">
-                          <h3 className="font-medium text-foreground">Team Tags</h3>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {team.tags?.map((tag) => (
-                            <div 
-                              key={`team-tag-${team.id}-${tag}`}
-                              className="flex items-center gap-1 px-2 py-1 bg-[#1E2D3D] rounded-full text-sm"
-                            >
-                              <span className="text-foreground">{tag}</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-5 w-5 p-0 hover:bg-[#2E3D4D]"
-                                onClick={() => handleRemoveTag(tag)}
-                              >
-                                <span className="text-muted-foreground">×</span>
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="flex gap-2">
-                          <div className="relative flex-1">
-                            <Input
-                              ref={tagInputRef}
-                              value={newTag}
-                              onChange={(e) => {
-                                setNewTag(e.target.value);
-                                setShowTagSuggestions(true);
-                              }}
-                              onFocus={() => setShowTagSuggestions(true)}
-                              onKeyDown={handleTagKeyDown}
-                              placeholder="Add new tag"
-                              className="w-full bg-[#1E2D3D] border-[#1E2D3D] text-foreground"
-                            />
-                            {showTagSuggestions && filteredTags.length > 0 && (
-                              <div 
-                                ref={tagSuggestionsRef}
-                                id="tag-suggestions"
-                                className="absolute z-50 w-full mt-1 bg-[#1E2D3D] border border-[#2E3D4D] rounded-md shadow-lg overflow-hidden"
-                              >
-                                {filteredTags.map((tag) => (
-                                  <button
-                                    key={`tag-suggestion-${tag}`}
-                                    onClick={() => {
-                                      handleAddTag(tag);
-                                      setNewTag("");
-                                      setShowTagSuggestions(false);
-                                      tagInputRef.current?.focus();
-                                    }}
-                                    onKeyDown={(e) => handleTagSuggestionKeyDown(e, tag)}
-                                    className="w-full px-4 py-2 text-left text-foreground hover:bg-[#2E3D4D] focus:bg-[#2E3D4D] focus:outline-none"
-                                  >
-                                    {tag}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <Button 
-                            onClick={() => {
-                              if (newTag.trim()) {
-                                handleAddTag(newTag.trim());
-                                setNewTag("");
-                                setShowTagSuggestions(false);
-                              }
-                            }}
-                            disabled={!newTag.trim()}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                          >
-                            Add Tag
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-center">
-                          <h3 className="font-medium text-foreground">Current Team Members</h3>
-                        </div>
-                        {loadingMembers ? (
-                          <div className="text-foreground">Loading members...</div>
-                        ) : (
-                          <div className="space-y-2">
-                            {teamMembers?.map((member) => (
-                              <div 
-                                key={`team-member-${member.user.id}`}
-                                className="flex items-center justify-between p-2 border border-[#1E2D3D] rounded bg-[#1E2D3D]"
-                              >
-                                <div>
-                                  <p className="font-medium text-foreground">{member.user.name}</p>
-                                  <p className="text-sm text-muted-foreground">{member.user.email}</p>
-                                </div>
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  onClick={() => handleRemoveMember(member.user.id)}
-                                  disabled={removeMember.isLoading}
-                                >
-                                  Remove
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="space-y-4">
-                        <h3 className="font-medium text-foreground">Add Team Members</h3>
-                        <div className="space-y-2">
-                          <Label className="text-foreground">Filter by Role</Label>
-                          <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as Role)}>
-                            <SelectTrigger className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="bg-[#1E2D3D] border-[#1E2D3D]">
-                              <SelectItem value={VALID_ROLES[0]} className="text-foreground hover:bg-[#0A1A2F]">Admin</SelectItem>
-                              <SelectItem value={VALID_ROLES[1]} className="text-foreground hover:bg-[#0A1A2F]">Manager</SelectItem>
-                              <SelectItem value={VALID_ROLES[2]} className="text-foreground hover:bg-[#0A1A2F]">Agent</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label className="text-foreground">Search Users</Label>
-                          <Input
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search by name or email"
-                            className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground placeholder:text-muted-foreground"
-                          />
-                        </div>
-
-                        {loadingUsers ? (
-                          <div className="text-foreground">Loading users...</div>
-                        ) : (
-                          <div className="space-y-2">
-                            {filteredEligibleUsers?.map((user) => (
-                              <div 
-                                key={`eligible-user-${user.id}`} 
-                                className="flex items-center justify-between p-2 border border-[#1E2D3D] rounded bg-[#1E2D3D]"
-                              >
-                                <div>
-                                  <p className="font-medium text-foreground">{user.name}</p>
-                                  <p className="text-sm text-muted-foreground">{user.email}</p>
-                                </div>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleAddMember(user.id)}
-                                  disabled={addMember.isLoading}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white border-0"
-                                >
-                                  Add to Team
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="pt-6 border-t border-[#1E2D3D]">
-                        <Button 
-                          variant="destructive" 
-                          onClick={() => setIsDeleteDialogOpen(true)}
-                          className="w-full"
-                        >
-                          Delete Team
-                        </Button>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        setSelectedTeamId(team.id);
+                        setIsDeleteDialogOpen(true);
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
-        </div>
-      )}
 
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-foreground">Delete Team</AlertDialogTitle>
-            <AlertDialogDescription className="text-muted-foreground">
-              This action cannot be undone. Please enter your password to confirm.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <form onSubmit={handleDeleteTeam} className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-foreground">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={deletePassword}
-                onChange={(e) => setDeletePassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-                className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground"
-              />
-              {deleteError && (
-                <p className="text-sm text-destructive">{deleteError}</p>
+              {/* Show team members */}
+              <div className="space-y-2">
+                {team.members.map((member) => (
+                  <div 
+                    key={`${team.id}-member-${member.id}`}
+                    className="flex items-center space-x-2 text-sm text-muted-foreground"
+                  >
+                    <span>{member.name || member.email}</span>
+                    <StatusBadge role={member.role} className="uppercase">
+                      {member.role}
+                    </StatusBadge>
+                  </div>
+                ))}
+              </div>
+
+              {/* Show team tags */}
+              {team.tags && team.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {team.tags.map((tag, index) => (
+                    <span
+                      key={`${team.id}-tag-${index}`}
+                      className="px-2 py-1 text-sm rounded-full bg-[#0A1A2F] text-foreground"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
-            <AlertDialogFooter>
-              <AlertDialogCancel 
-                onClick={() => {
-                  setDeletePassword("");
-                  setDeleteError(null);
-                }}
-                className="bg-[#1E2D3D] text-foreground hover:bg-[#2E3D4D] hover:text-foreground"
-              >
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction asChild>
+          ))
+        )}
+      </div>
+
+      {/* Only render management dialogs for managers */}
+      {isManager && (
+        <>
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <DialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">
+              <DialogHeader>
+                <DialogTitle className="text-foreground">Create New Team</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleCreateTeam} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="teamName" className="text-foreground">Team Name</Label>
+                  <Input
+                    id="teamName"
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    placeholder="Enter team name"
+                    required
+                    className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground"
+                  />
+                </div>
                 <Button 
-                  type="submit"
-                  variant="destructive"
-                  disabled={deleteTeam.isLoading || !deletePassword}
+                  type="submit" 
+                  className="w-full"
+                  disabled={createTeam.isLoading}
                 >
-                  {deleteTeam.isLoading ? "Deleting..." : "Delete Team"}
+                  {createTeam.isLoading ? "Creating..." : "Create Team"}
                 </Button>
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </form>
-        </AlertDialogContent>
-      </AlertDialog>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isTeamDialogOpen} onOpenChange={setIsTeamDialogOpen}>
+            <DialogContent className="max-w-2xl bg-[#0A1A2F] border-[#1E2D3D]">
+              <DialogHeader>
+                <DialogTitle className="text-foreground">Manage Team</DialogTitle>
+                <DialogDescription className="text-muted-foreground">
+                  Manage team members and settings
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-medium text-foreground">Team Tags</h3>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {teams?.find(t => t.id === selected_team_id)?.tags?.map((tag) => (
+                      <div 
+                        key={`team-tag-${selected_team_id}-${tag}`}
+                        className="flex items-center gap-1 px-2 py-1 bg-[#1E2D3D] rounded-full text-sm"
+                      >
+                        <span className="text-foreground">{tag}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 w-5 p-0 hover:bg-[#2E3D4D]"
+                          onClick={() => handleRemoveTag(tag)}
+                        >
+                          <span className="text-muted-foreground">×</span>
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        ref={tagInputRef}
+                        value={newTag}
+                        onChange={(e) => {
+                          setNewTag(e.target.value);
+                          setShowTagSuggestions(true);
+                        }}
+                        onFocus={() => setShowTagSuggestions(true)}
+                        onKeyDown={handleTagKeyDown}
+                        placeholder="Add new tag"
+                        className="w-full bg-[#1E2D3D] border-[#1E2D3D] text-foreground"
+                      />
+                      {showTagSuggestions && filteredTags.length > 0 && (
+                        <div 
+                          ref={tagSuggestionsRef}
+                          id="tag-suggestions"
+                          className="absolute z-50 w-full mt-1 bg-[#1E2D3D] border border-[#2E3D4D] rounded-md shadow-lg overflow-hidden"
+                        >
+                          {filteredTags.map((tag) => (
+                            <button
+                              key={`tag-suggestion-${tag}`}
+                              onClick={() => {
+                                handleAddTag(tag);
+                                setNewTag("");
+                                setShowTagSuggestions(false);
+                                tagInputRef.current?.focus();
+                              }}
+                              onKeyDown={(e) => handleTagSuggestionKeyDown(e, tag)}
+                              className="w-full px-4 py-2 text-left text-foreground hover:bg-[#2E3D4D] focus:bg-[#2E3D4D] focus:outline-none"
+                            >
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <Button 
+                      onClick={() => {
+                        if (newTag.trim()) {
+                          handleAddTag(newTag.trim());
+                          setNewTag("");
+                          setShowTagSuggestions(false);
+                        }
+                      }}
+                      disabled={!newTag.trim()}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      Add Tag
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-medium text-foreground">Current Team Members</h3>
+                  </div>
+                  {loadingMembers ? (
+                    <div className="text-foreground">Loading members...</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {teamMembers?.map((member) => (
+                        <div 
+                          key={member.user.id}
+                          className="flex items-center justify-between py-2"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm text-foreground">
+                              {member.user.name || member.user.email}
+                            </span>
+                            <StatusBadge role={member.user.role} className="uppercase">
+                              {member.user.role}
+                            </StatusBadge>
+                          </div>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleRemoveMember(member.user.id)}
+                            disabled={removeMember.isLoading}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="font-medium text-foreground">Add Team Members</h3>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Filter by Role</Label>
+                    <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as Role)}>
+                      <SelectTrigger className="bg-[#0A1A2F] border-[#1E2D3D] text-foreground">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#0A1A2F] border-[#1E2D3D]">
+                        {VALID_ROLES.map((role) => (
+                          <SelectItem
+                            key={role}
+                            value={role}
+                            className="text-foreground hover:bg-[#1E2D3D] flex items-center justify-center"
+                          >
+                            <StatusBadge role={role} className="uppercase">
+                              {role}
+                            </StatusBadge>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Search Users</Label>
+                    <Input
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search by name or email"
+                      className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+
+                  {loadingUsers ? (
+                    <div className="text-foreground">Loading users...</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredEligibleUsers?.map((user) => (
+                        <div 
+                          key={`eligible-user-${user.id}`} 
+                          className="flex items-center justify-between p-2 border border-[#1E2D3D] rounded bg-[#1E2D3D]"
+                        >
+                          <div>
+                            <p className="font-medium text-foreground">{user.name}</p>
+                            <p className="text-sm text-muted-foreground">{user.email}</p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleAddMember(user.id)}
+                            disabled={addMember.isLoading}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+                          >
+                            Add to Team
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-6 border-t border-[#1E2D3D]">
+                  <Button 
+                    variant="destructive" 
+                    onClick={() => setIsDeleteDialogOpen(true)}
+                    className="w-full"
+                  >
+                    Delete Team
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+            <AlertDialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-foreground">Delete Team</AlertDialogTitle>
+                <AlertDialogDescription className="text-muted-foreground">
+                  This action cannot be undone. Please enter your password to confirm.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <form onSubmit={handleDeleteTeam} className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-foreground">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={deletePassword}
+                    onChange={(e) => setDeletePassword(e.target.value)}
+                    placeholder="Enter your password"
+                    required
+                    className="bg-[#1E2D3D] border-[#1E2D3D] text-foreground"
+                  />
+                  {deleteError && (
+                    <p className="text-sm text-destructive">{deleteError}</p>
+                  )}
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel 
+                    onClick={() => {
+                      setDeletePassword("");
+                      setDeleteError(null);
+                    }}
+                    className="bg-[#1E2D3D] text-foreground hover:bg-[#2E3D4D] hover:text-foreground"
+                  >
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction asChild>
+                    <Button 
+                      type="submit"
+                      variant="destructive"
+                      disabled={deleteTeam.isLoading || !deletePassword}
+                    >
+                      {deleteTeam.isLoading ? "Deleting..." : "Delete Team"}
+                    </Button>
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </form>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
     </div>
   );
-} 
+}

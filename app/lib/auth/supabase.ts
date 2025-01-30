@@ -19,7 +19,7 @@ export const supabase = createBrowserClient(
 )
 
 // Admin client (only used server-side) with service role key
-export const createAdminClient = () => {
+export const createAdminClient = (bypassRls = false) => {
   if (typeof window !== 'undefined') {
     throw new Error('Admin client cannot be used on the client side')
   }
@@ -35,7 +35,18 @@ export const createAdminClient = () => {
     {
       auth: {
         autoRefreshToken: false,
-        persistSession: false
+        persistSession: false,
+        detectSessionInUrl: false
+      },
+      db: {
+        schema: 'public'
+      },
+      global: {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+          'x-custom-setting': bypassRls ? 'app.bypass_rls=true' : 'app.bypass_rls=false'
+        }
       }
     }
   )

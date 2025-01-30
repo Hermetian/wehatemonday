@@ -75,8 +75,9 @@ async function verifyUserRole(supabase: ReturnType<typeof createServerClient>, u
       });
     }
 
-    // Verify role exists in public.users table
-    const { data: dbUser, error: dbError } = await supabase
+    // Use admin client to verify role in database
+    const adminClient = createAdminClient();
+    const { data: dbUser, error: dbError } = await adminClient
       .from('users')
       .select('role')
       .eq('id', user.id)
@@ -101,18 +102,6 @@ async function verifyUserRole(supabase: ReturnType<typeof createServerClient>, u
       
       if (updateError) {
         console.error('Failed to sync auth metadata:', updateError);
-      }
-
-      // Use admin client to update database role claim
-      const adminClient = createAdminClient();
-      const { error: dbRoleError } = await adminClient.rpc('set_claim', {
-        uid: user.id,
-        claim: 'role',
-        value: dbRole.toLowerCase()
-      });
-
-      if (dbRoleError) {
-        console.error('Failed to sync database role:', dbRoleError);
       }
       
       return dbRole;
@@ -217,18 +206,21 @@ export async function createContext({ req }: CreateContextOptions) {
 
     // Get and verify user role
     try {
-    const role = await verifyUserRole(supabase, session.user);
-    const contextUser: ContextUser = {
-      ...session.user,
-      role
-    };
+      const role = await verifyUserRole(supabase, session.user);
+      const contextUser: ContextUser = {
+        ...session.user,
+        role
+      };
       console.log('Verified user role:', role);
 
-    return {
-      req,
-      user: contextUser,
-      supabase,
-    };
+      // Use admin client for database operations
+      const adminClient = createAdminClient();
+
+      return {
+        req,
+        user: contextUser,
+        supabase: adminClient,  // Use admin client instead of regular client
+      };
     } catch (error) {
       console.error('Error getting user role:', error);
       throw error instanceof TRPCError ? error : new TRPCError({

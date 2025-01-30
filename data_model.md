@@ -81,7 +81,7 @@ Referenced by:
     TABLE "messages" CONSTRAINT "messages_ticket_id_fkey" FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
 
                                      Table "public.messages"
-    Column    |           Type           | Collation | Nullable |         Default         
+    Column     |           Type           | Collation | Nullable |         Default         
 --------------+--------------------------+-----------+----------+-------------------------
  id           | text                     |           | not null | gen_random_uuid()::text
  content      | text                     |           | not null | 
@@ -90,12 +90,15 @@ Referenced by:
  created_at   | timestamp with time zone |           |          | CURRENT_TIMESTAMP
  updated_at   | timestamp with time zone |           |          | CURRENT_TIMESTAMP
  content_html | text                     |           | not null | ''::text
+ created_by_id| uuid                     |           |          | 
 Indexes:
     "messages_pkey" PRIMARY KEY, btree (id)
     "idx_messages_is_internal" btree (is_internal)
     "idx_messages_ticket_id" btree (ticket_id)
+    "idx_messages_created_by" btree (created_by_id)
 Foreign-key constraints:
     "messages_ticket_id_fkey" FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+    "fk_messages_created_by" FOREIGN KEY (created_by_id) REFERENCES users(id) ON DELETE CASCADE
 
                                   Table "public.teams"
    Column   |           Type           | Collation | Nullable |         Default         

@@ -24,7 +24,7 @@ function AuthContent() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
-  const [role, setRole] = useState<Role>('CUSTOMER');
+  const [role, setRole] = useState<Role>('AGENT');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { signIn, signUp, user, loading } = useAuth();
@@ -151,10 +151,11 @@ function AuthContent() {
                     <SelectValue placeholder="Select your role" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CUSTOMER">Customer</SelectItem>
+                    {/* Temporarily disabled other roles */}
+                    {/* <SelectItem value="CUSTOMER">Customer</SelectItem> */}
                     <SelectItem value="AGENT">Agent</SelectItem>
-                    <SelectItem value="MANAGER">Manager</SelectItem>
-                    <SelectItem value="ADMIN">Admin</SelectItem>
+                    {/* <SelectItem value="MANAGER">Manager</SelectItem> */}
+                    {/* <SelectItem value="ADMIN">Admin</SelectItem> */}
                   </SelectContent>
                 </Select>
               </div>

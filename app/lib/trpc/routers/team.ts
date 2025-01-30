@@ -469,42 +469,45 @@ export const teamRouter = router({
     }),
 
   addMember: protectedProcedure
-    .input(z.object({
-      teamId: z.string(),
-      userId: z.string(),
-    }))
+    .input(
+      z.object({
+        teamId: z.string(),
+        userId: z.string(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       try {
-        if (ctx.user?.role !== 'MANAGER' && ctx.user?.role !== 'ADMIN') {
+        if (!ctx.supabase) {
           throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "Only managers and admins can add team members",
+            code: "INTERNAL_SERVER_ERROR",
+            message: "No Supabase client in context",
           });
         }
 
-        // Add team member
-        const { data: teamMember, error } = await ctx.supabase
+        if (!ctx.user) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "No user in context",
+          });
+        }
+
+        // Verify user has permission to add team members
+        if (ctx.user.role !== 'ADMIN' && ctx.user.role !== 'MANAGER') {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only ADMIN and MANAGER roles can add team members",
+          });
+        }
+
+        // Add the member to the team
+        const { error } = await ctx.supabase
           .from('team_members')
-          .insert([{
-            team_id: input.teamId,
-            user_id: input.userId,
-            created_at: new Date().toISOString(),
-          }])
-          .select(`
-            id,
-            team_id,
-            user_id,
-            role,
-            created_at,
-            updated_at,
-            user:user_id(
-              id,
-              name,
-              email,
-              role
-            )
-          `)
-          .single();
+          .insert([
+            {
+              team_id: input.teamId,
+              user_id: input.userId,
+            }
+          ]);
 
         if (error) {
           throw new TRPCError({
@@ -514,8 +517,19 @@ export const teamRouter = router({
           });
         }
 
-        return teamMember;
+        // Log the action
+        await createAuditLog(ctx.supabase, {
+          action: 'ADD_TEAM_MEMBER',
+          userId: ctx.user.id,
+          details: {
+            teamId: input.teamId,
+            addedUserId: input.userId,
+          },
+        });
+
+        return { success: true };
       } catch (error) {
+        console.error('Error in addMember:', error);
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",

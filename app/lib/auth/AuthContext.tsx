@@ -109,36 +109,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       console.log('AuthContext: Initializing auth...');
-      setLoading(true);
+      if (!mounted) return;
+      
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) {
           console.error('AuthContext: Error getting initial session:', error);
           throw error;
         }
+
         console.log('AuthContext: Initial session present:', !!session);
-        if (mounted) {
-          await updateAuthState(session);
-          setInitialized(true);
+        if (!mounted) return;
+
+        if (session?.user) {
+          // Get role from database (source of truth)
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('role')
+            .eq('id', session.user.id)
+            .single();
+
+          if (userError || !userData) {
+            console.error('AuthContext: Error fetching user role:', userError);
+            throw new Error('Failed to fetch user role');
+          }
+
+          if (!mounted) return;
+
+          setUser(session.user);
+          setRole(userData.role as Role);
+          setAccessToken(session.access_token);
+          console.log('AuthContext: Successfully initialized with role:', userData.role);
+        } else {
+          setUser(null);
+          setRole(null);
+          setAccessToken(null);
+          console.log('AuthContext: No session, cleared auth state');
         }
       } catch (error) {
-        console.error('AuthContext: Error initializing auth:', error);
+        console.error('AuthContext: Error in initialization:', error);
         if (mounted) {
           setUser(null);
           setRole(null);
           setAccessToken(null);
-          setInitialized(true);
         }
       } finally {
         if (mounted) {
           setLoading(false);
+          setInitialized(true);
         }
       }
     };
 
     initializeAuth();
     return () => { mounted = false; };
-  }, [updateAuthState]);
+  }, []);
 
   // Auth state change listener
   useEffect(() => {
@@ -149,35 +174,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       async (event, session) => {
         console.log('AuthContext: Auth state change:', event);
         console.log('AuthContext: New session present:', !!session);
-        if (session) {
-          console.log('AuthContext: Session details:', {
-            user: session.user.email,
-            expires: new Date(session.expires_at! * 1000).toISOString(),
-            access_token: !!session.access_token,
-            refresh_token: !!session.refresh_token
-          });
-        }
+        
+        if (session?.user) {
+          try {
+            const { data: userData, error: userError } = await supabase
+              .from('users')
+              .select('role')
+              .eq('id', session.user.id)
+              .single();
 
-        if (event === 'SIGNED_IN') {
-          console.log('AuthContext: Processing SIGNED_IN event');
-          await updateAuthState(session);
-        } else if (event === 'SIGNED_OUT') {
-          console.log('AuthContext: Processing SIGNED_OUT event');
+            if (userError || !userData) {
+              console.error('AuthContext: Error fetching user role:', userError);
+              throw new Error('Failed to fetch user role');
+            }
+
+            setUser(session.user);
+            setRole(userData.role as Role);
+            setAccessToken(session.access_token);
+            console.log('AuthContext: Updated auth state with role:', userData.role);
+          } catch (error) {
+            console.error('AuthContext: Error updating auth state:', error);
+            setUser(null);
+            setRole(null);
+            setAccessToken(null);
+          }
+        } else {
           setUser(null);
           setRole(null);
           setAccessToken(null);
-        } else if (event === 'TOKEN_REFRESHED') {
-          console.log('AuthContext: Processing TOKEN_REFRESHED event');
-          await updateAuthState(session);
+          console.log('AuthContext: Cleared auth state');
         }
       }
     );
 
     return () => {
-      console.log('AuthContext: Cleaning up auth state listener');
       subscription.unsubscribe();
     };
-  }, [initialized, updateAuthState]);
+  }, [initialized]);
 
   const signIn = async (email: string, password: string): Promise<void> => {
     console.log('AuthContext: Starting sign in...');
@@ -234,6 +267,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string, initialRole: Role): Promise<void> => {
     setLoading(true);
     try {
+      // First try to sign in to check if user exists
+      const { data: existingData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (!signInError && existingData.user) {
+        console.log('User exists, updating role...');
+        
+        // Update user role in database
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            role: initialRole,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingData.user.id);
+
+        if (updateError) throw updateError;
+
+        // Update user metadata
+        const { error: metadataError } = await supabase.auth.updateUser({
+          data: { user_role: initialRole }
+        });
+
+        if (metadataError) throw metadataError;
+
+        await updateAuthState(existingData.session);
+        return;
+      }
+
+      // If user doesn't exist, proceed with signup
       const { data, error } = await supabase.auth.signUp({ 
         email, 
         password,
@@ -264,7 +329,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       await updateAuthState(data.session);
     } catch (error) {
-      console.error('Error signing up:', error);
+      console.error('Error in signUp:', error);
       throw error;
     } finally {
       setLoading(false);
