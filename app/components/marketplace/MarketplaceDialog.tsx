@@ -7,6 +7,9 @@ import { Alert, AlertTitle, AlertDescription } from '../ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/app/lib/auth/AuthContext';
+import { marked } from 'marked';
 
 interface MarketplaceDialogProps {
   open: boolean;
@@ -17,6 +20,8 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
   open,
   onOpenChange,
 }) => {
+  const router = useRouter();
+  const { user } = useAuth();
   const [content, setContent] = React.useState('');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [alert, setAlert] = React.useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -27,12 +32,33 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
     priority: string;
     tags: string[];
   } | null>(null);
+  const [waitForProcessing, setWaitForProcessing] = React.useState(false);
+
+  const createTicket = trpc.ticket.create.useMutation({
+    onSuccess: () => {
+      setAlert({ type: 'success', message: 'Ticket created successfully' });
+      setTimeout(() => {
+        onOpenChange(false);
+        router.push('/tickets');
+      }, 1500);
+    },
+    onError: (error) => {
+      setAlert({ 
+        type: 'error', 
+        message: error.message || 'Failed to create ticket' 
+      });
+    }
+  });
 
   const createMarketplace = trpc.marketplace.create.useMutation({
     onSuccess: (data) => {
       setAlert({ type: 'success', message: 'Marketplace conversation uploaded successfully' });
       setContent('');
-      processConversation.mutate({ id: data.id });
+      if (waitForProcessing) {
+        processConversation.mutate({ id: data.id });
+      } else {
+        onOpenChange(false);
+      }
     },
     onError: (error) => {
       setAlert({ 
@@ -73,13 +99,24 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
   };
 
   const handleCreateTicket = () => {
-    // TODO: Implement ticket creation from processed data
-    onOpenChange(false);
+    if (!processedTicket || !user) return;
+
+    // Convert description to HTML using marked
+    const descriptionHtml = marked(processedTicket.description);
+
+    createTicket.mutate({
+      title: processedTicket.title,
+      description: processedTicket.description,
+      description_html: descriptionHtml,
+      priority: processedTicket.priority as any,
+      customer_id: user.id,
+      created_by_id: user.id,
+    });
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-[#0A1A2F] border-[#1E2D3D]">
+      <DialogContent className="bg-[#0A1A2F] border-[#1E2D3D] max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-foreground">Upload Marketplace Conversation</DialogTitle>
         </DialogHeader>
@@ -100,70 +137,81 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
               className="min-h-[200px] bg-[#1E2D3D] border-[#1E2D3D] text-foreground placeholder:text-muted-foreground"
             />
 
-            {processedTicket && (
-              <Card className="bg-[#1E2D3D] border-[#1E2D3D]">
-                <CardHeader>
-                  <CardTitle className="text-foreground">Processed Ticket</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div>
-                    <span className="font-semibold text-foreground">Title:</span>
-                    <p className="text-muted-foreground">{processedTicket.title}</p>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-foreground">Description:</span>
-                    <p className="text-muted-foreground whitespace-pre-wrap">{processedTicket.description}</p>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-foreground">Priority:</span>
-                    <Badge variant="outline" className="ml-2 bg-[#1E2D3D] border-[#1E2D3D] text-foreground">{processedTicket.priority}</Badge>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-foreground">Tags:</span>
-                    <div className="flex flex-wrap gap-2 mt-1">
+            {!processedTicket ? (
+              <div className="flex space-x-4">
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || !content.trim()}
+                  className="flex-1"
+                >
+                  {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Upload Only
+                </Button>
+                <Button
+                  type="button"
+                  disabled={isSubmitting || !content.trim()}
+                  className="flex-1"
+                  onClick={() => {
+                    setWaitForProcessing(true);
+                    handleSubmit(new Event('submit') as any);
+                  }}
+                >
+                  {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Upload and Process
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <Card className="bg-[#1E2D3D] border-[#1E2D3D]">
+                  <CardHeader>
+                    <CardTitle>Processed Ticket</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div>
+                      <span className="font-semibold">Title:</span> {processedTicket.title}
+                    </div>
+                    <div>
+                      <span className="font-semibold">Priority:</span>{' '}
+                      <Badge variant="outline">{processedTicket.priority}</Badge>
+                    </div>
+                    <div>
+                      <span className="font-semibold">Tags:</span>{' '}
                       {processedTicket.tags.map((tag) => (
-                        <Badge key={tag} variant="secondary" className="bg-[#1E2D3D] text-foreground">{tag}</Badge>
+                        <Badge key={tag} variant="secondary" className="mr-1">
+                          {tag}
+                        </Badge>
                       ))}
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+                    <div>
+                      <span className="font-semibold">Description:</span>
+                      <p className="mt-1 text-sm">{processedTicket.description}</p>
+                    </div>
+                  </CardContent>
+                </Card>
 
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => onOpenChange(false)}
-              className="bg-[#1E2D3D] hover:bg-[#2E3D4D]"
-            >
-              Cancel
-            </Button>
-            {processedTicket ? (
-              <Button
-                type="button"
-                onClick={handleCreateTicket}
-                disabled={isSubmitting || isProcessing}
-                className="bg-blue-600 text-white hover:bg-blue-700"
-              >
-                Create Ticket
-              </Button>
-            ) : (
-              <Button
-                type="submit"
-                disabled={isSubmitting || isProcessing || !content.trim()}
-                className="bg-blue-600 text-white hover:bg-blue-700"
-              >
-                {isSubmitting || isProcessing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {isSubmitting ? 'Uploading...' : 'Processing...'}
-                  </>
-                ) : (
-                  'Upload'
-                )}
-              </Button>
+                <div className="flex justify-end space-x-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setProcessedTicket(null);
+                      setContent('');
+                    }}
+                  >
+                    Start Over
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleCreateTicket}
+                    disabled={createTicket.isLoading}
+                  >
+                    {createTicket.isLoading && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Create Ticket
+                  </Button>
+                </div>
+              </div>
             )}
           </div>
         </form>

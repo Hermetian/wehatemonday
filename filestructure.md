@@ -25,6 +25,8 @@ wehatemonday
 │   │   │   ├── Navigation.tsx
 │   │   │   ├── SortableItem.tsx
 │   │   │   └── Terminal.tsx
+│   │   ├── marketplace
+│   │   │   └── MarketplaceDialog.tsx
 │   │   ├── teams
 │   │   │   ├── CreateTeamForm.tsx
 │   │   │   └── TeamManagement.tsx
@@ -50,7 +52,6 @@ wehatemonday
 │   │       ├── textarea.tsx
 │   │       ├── toggle.tsx
 │   │       └── tooltip.tsx
-│   ├── contexts
 │   ├── favicon.ico
 │   ├── globals.css
 │   ├── homepage
@@ -60,11 +61,14 @@ wehatemonday
 │   │   ├── auth
 │   │   │   ├── AuthContext.tsx
 │   │   │   └── supabase.ts
+│   │   ├── services
+│   │   │   └── langsmith.ts
 │   │   ├── trpc
 │   │   │   ├── client.ts
 │   │   │   ├── context.ts
 │   │   │   ├── routers
 │   │   │   │   ├── _app.ts
+│   │   │   │   ├── marketplace.ts
 │   │   │   │   ├── message.ts
 │   │   │   │   ├── team.ts
 │   │   │   │   ├── ticket.ts
@@ -76,6 +80,7 @@ wehatemonday
 │   │       ├── cache-helpers.ts
 │   │       ├── cache.ts
 │   │       ├── common.ts
+│   │       ├── rls-monitor.ts
 │   │       ├── test-data-cleanup.ts
 │   │       ├── test-data-generator.ts
 │   │       └── test-ticket-generator.ts
@@ -88,6 +93,7 @@ wehatemonday
 │   │       └── page.tsx
 │   └── types
 │       ├── auth.ts
+│       ├── marketplace.ts
 │       └── tickets.ts
 ├── components
 ├── components.json
@@ -99,10 +105,6 @@ wehatemonday
 │   │   └── routers
 │   └── utils.ts
 ├── middleware.ts
-├── migrations
-│   ├── 20250126213255_create_user_role_enum.sql
-│   ├── 20250128210909_add_created_by_to_messages.sql
-│   └── dashboard_migration.sql
 ├── next-env.d.ts
 ├── next.config.ts
 ├── package-lock.json
@@ -114,15 +116,30 @@ wehatemonday
 │   ├── next.svg
 │   ├── vercel.svg
 │   └── window.svg
+├── schema.sql
 ├── supabase
 │   ├── config.toml
-│   └── functions
-│       ├── cleanup-expired-test-data
-│       │   ├── deno.json
-│       │   ├── import_map.json
-│       │   └── index.ts
-│       ├── schedule_cleanup.sql
-│       └── sync_role.sql
+│   ├── functions
+│   │   ├── cleanup-expired-test-data
+│   │   │   ├── deno.json
+│   │   │   ├── import_map.json
+│   │   │   └── index.ts
+│   │   ├── schedule_cleanup.sql
+│   │   └── sync_role.sql
+│   ├── migrations
+│   │   ├── 20250126213255_create_user_role_enum.sql
+│   │   ├── 20250128210909_add_created_by_to_messages.sql
+│   │   ├── 20250129155900_add_rls_only.sql
+│   │   ├── 20250129160920_add_users_rls.sql
+│   │   ├── 20250129161930_grant_service_role.sql
+│   │   ├── 20250129163600_add_users_rls.sql
+│   │   ├── 20250129174000_add_rls_monitoring.sql
+│   │   ├── 20250129174100_enable_pg_cron.sql
+│   │   ├── 20250129194600_add_marketplace_conversations.sql
+│   │   ├── 20250129200000_add_langsmith_config.sql
+│   │   └── dashboard_migration.sql
+│   └── tests
+│       └── rls_test.sql
 ├── tailwind.config.ts
 ├── terminal
 ├── tsconfig.json

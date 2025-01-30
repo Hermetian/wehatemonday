@@ -1,4 +1,8 @@
 import { createAdminClient } from '@/app/lib/auth/supabase';
+import { ChatOpenAI } from '@langchain/openai';
+import { PromptTemplate } from '@langchain/core/prompts';
+import { RunnableSequence } from '@langchain/core/runnables';
+import { JsonOutputParser } from '@langchain/core/output_parsers';
 
 interface ProcessedTicketData {
   title: string;
@@ -7,8 +11,27 @@ interface ProcessedTicketData {
   tags: string[];
 }
 
+const SYSTEM_TEMPLATE = `You are a helpful assistant that processes marketplace conversations. Given a conversation, you will:
+
+1. Create a title by combining the customer's name with a short product description (e.g., "John Smith / 3Br2Ba")
+2. Format the conversation with "Customer:" and "Me:" prefixes
+3. Extract product details as tags
+4. Assess the customer's interest level
+
+Format your response as JSON with these fields:
+- title: Customer's name + short product description
+- description: The formatted conversation
+- priority: Customer interest level (LOW/MEDIUM/HIGH/URGENT)
+- tags: Product details (up to 5)
+
+Conversation to process: {conversation}`;
+
 export class LangSmithService {
   private adminClient = createAdminClient(true);
+  private model = new ChatOpenAI({
+    modelName: 'gpt-4-turbo-preview',
+    temperature: 0.2,
+  });
 
   async processConversation(id: string): Promise<ProcessedTicketData> {
     try {
@@ -55,14 +78,44 @@ export class LangSmithService {
   }
 
   private async processContent(content: string): Promise<ProcessedTicketData> {
-    // TODO: Implement actual LangChain processing
-    // For now, return mock data
-    return {
-      title: 'Mock Title',
-      description: content.slice(0, 100) + '...',
-      priority: 'MEDIUM',
-      tags: ['mock', 'test']
-    };
+    try {
+      const prompt = PromptTemplate.fromTemplate(SYSTEM_TEMPLATE);
+      const outputParser = new JsonOutputParser<ProcessedTicketData>();
+
+      const chain = RunnableSequence.from([
+        prompt,
+        this.model,
+        outputParser,
+      ]);
+
+      const result = await chain.invoke({
+        conversation: content
+      });
+
+      // Post-process the result
+      return {
+        ...result,
+        priority: this.validatePriority(result.priority),
+        tags: this.cleanTags(result.tags)
+      };
+    } catch (error) {
+      console.error('Error processing content:', error);
+      throw error;
+    }
+  }
+
+  private validatePriority(priority: string): ProcessedTicketData['priority'] {
+    const validPriorities = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+    const normalizedPriority = priority.toUpperCase();
+    return validPriorities.includes(normalizedPriority) ? normalizedPriority as ProcessedTicketData['priority'] : 'MEDIUM';
+  }
+
+  private cleanTags(tags: string[]): string[] {
+    return tags
+      .filter(tag => tag && typeof tag === 'string')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0)
+      .slice(0, 5);
   }
 
   async createRun(params: {
