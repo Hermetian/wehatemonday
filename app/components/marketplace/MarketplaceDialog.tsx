@@ -34,15 +34,9 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
   } | null>(null);
   const [waitForProcessing, setWaitForProcessing] = React.useState(false);
   const [isConfirming, setIsConfirming] = React.useState(false);
+  const [conversationId, setConversationId] = React.useState<string | null>(null);
 
   const createTicket = trpc.ticket.create.useMutation({
-    onSuccess: () => {
-      setAlert({ type: 'success', message: 'Ticket created successfully' });
-      setTimeout(() => {
-        onOpenChange(false);
-        router.push('/homepage');
-      }, 1500);
-    },
     onError: (error) => {
       setAlert({ 
         type: 'error', 
@@ -56,6 +50,7 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
     onSuccess: (data) => {
       setAlert({ type: 'success', message: 'Marketplace conversation uploaded successfully' });
       setContent('');
+      setConversationId(data.id);
       if (waitForProcessing) {
         processConversation.mutate({ id: data.id });
       } else {
@@ -93,6 +88,12 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
     },
   });
 
+  const updateTicketId = trpc.marketplace.updateTicketId.useMutation({
+    onError: (error) => {
+      console.error('Failed to update marketplace conversation:', error);
+    }
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim()) {
@@ -111,37 +112,61 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
   };
 
   const handleCreateTicket = async () => {
-    if (!processedTicket || !user) return;
+    if (!processedTicket || !user || !conversationId) return;
 
     setIsConfirming(true);
     try {
       // Convert description to HTML using marked
       const descriptionHtml = await marked(processedTicket.description);
 
-      createTicket.mutate({
+      const ticket = await createTicket.mutateAsync({
         title: processedTicket.title,
         description: processedTicket.description,
         description_html: descriptionHtml,
         priority: processedTicket.priority as any,
         customer_id: user.id,
         created_by_id: user.id,
+        tags: processedTicket.tags,
+        assigned_to_id: user.id, // Assign to the creator
       });
+
+      // Update the marketplace conversation with the ticket ID
+      if (ticket?.id) {
+        await updateTicketId.mutateAsync({
+          id: conversationId,
+          ticketId: ticket.id
+        });
+        
+        setAlert({ type: 'success', message: 'Ticket created successfully' });
+        // Use setTimeout to show the success message briefly before closing
+        setTimeout(() => {
+          handleClose();
+          router.push('/homepage');
+        }, 1500);
+      } else {
+        console.error('No ticket ID returned from creation');
+        throw new Error('Failed to get ticket ID');
+      }
     } catch (error) {
-      console.error('Error converting markdown:', error);
+      console.error('Error in ticket creation/update:', error);
       setAlert({
         type: 'error',
-        message: 'Failed to process ticket description'
+        message: error instanceof Error ? error.message : 'Failed to process ticket'
       });
       setIsConfirming(false);
     }
   };
 
   const handleClose = () => {
+    // Reset all states
     setContent('');
     setProcessedTicket(null);
     setAlert(null);
     setWaitForProcessing(false);
     setIsConfirming(false);
+    setIsProcessing(false);
+    setConversationId(null);
+    setIsSubmitting(false);
     onOpenChange(false);
   };
 

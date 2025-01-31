@@ -58,6 +58,8 @@ export const ticketRouter = router({
         priority: z.nativeEnum(TicketPriority),
         customer_id: z.string(),
         created_by_id: z.string(),
+        tags: z.array(z.string()).optional(),
+        assigned_to_id: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -81,7 +83,7 @@ export const ticketRouter = router({
             status: TicketStatus.OPEN,
             last_updated_by_id: ctx.user.id,
           }])
-          .select()
+          .select('*')
           .single();
 
         if (error) throw error;
@@ -212,11 +214,6 @@ export const ticketRouter = router({
             message: 'Failed to fetch tickets',
             cause: error,
           });
-        }
-
-        // Log the first ticket to see its structure
-        if (tickets && tickets.length > 0) {
-          console.log('First ticket structure:', JSON.stringify(tickets[0], null, 2));
         }
 
         // Use admin client only for additional metadata that doesn't need RLS
