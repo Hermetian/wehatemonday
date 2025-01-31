@@ -118,8 +118,9 @@ const Homepage = () => {
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Add the test component at the top */}
-        <TestComponent />
+        {(role as Role) === 'ADMIN' && (
+          <TestComponent />
+        )}
 
         {/* Header */}
         <div className="flex justify-between items-center mb-8 bg-gray-800 p-4 rounded-lg">

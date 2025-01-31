@@ -6,14 +6,35 @@ import { trpc } from '@/app/lib/trpc/client';
 import { Alert, AlertTitle, AlertDescription } from '../ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/lib/auth/AuthContext';
 import { marked } from 'marked';
+import { Input } from '../ui/input';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
+import { ProcessedTicketForm } from './ProcessedTicketForm';
+import type { TicketPriority } from '@/app/types/tickets';
 
 interface MarketplaceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+}
+
+// Share this interface with ProcessedTicketForm
+export interface ProcessedTicket {
+  title: string;
+  description: string;
+  priority: TicketPriority;
+  tags: string[];
+}
+
+// Type predicate function
+function isProcessedTicket(ticket: ProcessedTicket | null): ticket is ProcessedTicket {
+  return ticket !== null && 
+    typeof ticket.title === 'string' &&
+    typeof ticket.description === 'string' &&
+    typeof ticket.priority === 'string' &&
+    Array.isArray(ticket.tags);
 }
 
 export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
@@ -27,15 +48,12 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [alert, setAlert] = React.useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [isProcessing, setIsProcessing] = React.useState(false);
-  const [processedTicket, setProcessedTicket] = React.useState<{
-    title: string;
-    description: string;
-    priority: string;
-    tags: string[];
-  } | null>(null);
+  const [processedTicket, setProcessedTicket] = React.useState<ProcessedTicket | null>(null);
   const [waitForProcessing, setWaitForProcessing] = React.useState(false);
   const [isConfirming, setIsConfirming] = React.useState(false);
   const [conversationId, setConversationId] = React.useState<string | null>(null);
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [runId, setRunId] = React.useState<string | null>(null);
 
   const createTicket = trpc.ticket.create.useMutation({
     onError: (error) => {
@@ -75,7 +93,13 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
       setAlert({ type: 'info', message: 'Processing conversation...' });
     },
     onSuccess: (data) => {
-      setProcessedTicket(data);
+      setProcessedTicket({
+        title: data.processed.title,
+        description: data.processed.description,
+        priority: data.processed.priority as ProcessedTicket['priority'],
+        tags: data.processed.tags || []
+      });
+      setRunId(data.runId);
       setAlert({ type: 'success', message: 'Conversation processed successfully. Please review the ticket details.' });
     },
     onError: (error) => {
@@ -134,11 +158,11 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
         title: processedTicket.title,
         description: processedTicket.description,
         description_html: descriptionHtml,
-        priority: processedTicket.priority as any,
-        customer_id: conversation.created_by_id, // Use the conversation creator as the customer
-        created_by_id: user.id, // Current user (staff) is creating the ticket
+        priority: processedTicket.priority,
+        customer_id: conversation.created_by_id,
+        created_by_id: user.id,
         tags,
-        assigned_to_id: undefined, // Let the server handle the default value
+        assigned_to_id: undefined,
       });
 
       // Update the marketplace conversation with the ticket ID
@@ -178,6 +202,8 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
     setIsProcessing(false);
     setConversationId(null);
     setIsSubmitting(false);
+    setIsEditing(false);
+    setRunId(null);
     onOpenChange(false);
   };
 
@@ -239,67 +265,25 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
                 </div>
               </>
             ) : (
-              <div className="space-y-4">
-                <Card className="bg-[#1E2D3D] border-[#1E2D3D]">
-                  <CardHeader>
-                    <CardTitle className="text-foreground">Processed Ticket</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <span className="font-semibold text-foreground">Title:</span>{' '}
-                      <span className="text-muted-foreground">{processedTicket.title}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold text-foreground">Priority:</span>{' '}
-                      <Badge variant="outline" className="bg-transparent">
-                        {processedTicket.priority}
-                      </Badge>
-                    </div>
-                    <div>
-                      <span className="font-semibold text-foreground">Tags:</span>{' '}
-                      {processedTicket.tags.map((tag) => (
-                        <Badge key={tag} variant="secondary" className="mr-1 bg-[#2E3D4D]">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                    <div>
-                      <span className="font-semibold text-foreground">Description:</span>
-                      <div className="mt-2 p-4 bg-[#2E3D4D] rounded-lg">
-                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                          {processedTicket.description}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <div className="flex justify-end space-x-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setProcessedTicket(null);
-                      setContent('');
-                      setAlert(null);
-                    }}
-                    className="border-[#2E3D4D] text-muted-foreground hover:bg-[#2E3D4D]"
-                  >
-                    Start Over
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={handleCreateTicket}
-                    disabled={isConfirming}
-                    className="bg-green-600 hover:bg-green-700 text-white font-medium"
-                  >
-                    {isConfirming ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : null}
-                    {isConfirming ? 'Creating Ticket...' : 'Create Ticket'}
-                  </Button>
-                </div>
-              </div>
+              <ProcessedTicketForm
+                ticket={processedTicket}
+                runId={runId}
+                isEditing={isEditing}
+                onStartOver={() => {
+                  setProcessedTicket(null);
+                  setContent('');
+                  setAlert(null);
+                  setIsEditing(false);
+                }}
+                onEdit={() => setIsEditing(true)}
+                onCancelEdit={() => setIsEditing(false)}
+                onSaveChanges={(editedTicket) => {
+                  setProcessedTicket(editedTicket);
+                  setIsEditing(false);
+                }}
+                onCreateTicket={handleCreateTicket}
+                isConfirming={isConfirming}
+              />
             )}
           </div>
         </form>

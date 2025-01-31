@@ -36,17 +36,32 @@ interface SuggestionFeedback {
 const SYSTEM_TEMPLATE = `You are a helpful assistant that processes marketplace conversations. Given a conversation, you will:
 
 1. Create a title by combining the customer's name with a short product description (e.g., "John Smith / 3Br2Ba")
-2. Format the conversation with "Buyer:" and "Seller:" prefixes
+2. Format the conversation with "Buyer:" and "Seller:" prefixes, intelligently determining who is who based on context
 3. Extract product details as tags
 4. Assess the customer's interest level
 
+You should be able to identify speakers even if the conversation format varies. Common patterns include:
+- Names followed by messages (e.g., "John: Hello" or "John Smith Hello")
+- Platform-specific formats (e.g., "You sent", "Agent:", "Customer wrote:")
+- Timestamps or metadata mixed with messages
+- Messages without explicit speaker labels but clear from context
+
+Rules for speaker identification:
+- The buyer is typically asking questions about the property or showing interest
+- The seller/agent is typically answering questions or providing property details
+- Messages starting with "You" or similar self-references are typically from the seller
+- Look for patterns in the conversation flow to identify roles even without explicit labels
+
 Format your response as JSON with these fields:
 - title: Customer's name + short product description
-- description: The formatted conversation
+- description: The formatted conversation with consistent "Buyer:" and "Seller:" prefixes
 - priority: Customer interest level (LOW/MEDIUM/HIGH/URGENT)
 - tags: Product details (up to 3). Also include as a tag the full product name.
 
-Example: Earl Joseph
+Example inputs and outputs:
+
+Input 1:
+Earl
 Earl · 6 Beds 2 Baths House
 Add
 Name
@@ -54,39 +69,48 @@ Earl started this chat. View buyer profile
 Earl
 Earl Joseph
 Is this listing still available?
-Jan 23, 2025, 11:19 AM
+Jan 23, 2025, 11:19 AM
 You sent
 It is
 You sent
 Would you like to see it
-Sat 6:40 AM
+Sat 6:40 AM
 Earl
 Earl Joseph
 Where is it located again
-Sat 9:25 AM
+Sat 9:25 AM
 You sent
 524 Hamilton Ave, Menlo Park 94025
-Sat 8:48 PM
-Earl
-Earl Joseph
-Can you send me your number so we can talk and set up a time I can come see the property my name is Earl number 628 303-8938
 
-title: Earl Joseph 6Br2Ba
-description: Customer: Is this listing still available?
-Seller: It is
-Seller: Would you like to see it
-Buyer: Where is it located again
-Seller: 524 Hamilton Ave, Menlo Park 94025
-Buyer: Can you send me your number so we can talk and set up a time I can come see the property my name is Earl number 628 303-8938
-priority: HIGH
-tags: 6_Beds_2_Baths_House, 524_Hamilton, phone_number
+Output 1:
+{{
+  "title": "Earl Joseph / 6Br2Ba",
+  "description": "Buyer: Is this listing still available?\\nSeller: It is\\nSeller: Would you like to see it\\nBuyer: Where is it located again\\nSeller: 524 Hamilton Ave, Menlo Park 94025",
+  "priority": "HIGH",
+  "tags": ["6_Beds_2_Baths_House", "524_Hamilton", "Menlo_Park"]
+}}
 
-Reasoning: 
-title: The customer's name is Earl Joseph. The product is a 6 Beds 2 Baths House, which we shorten to 6Br2Ba
-description: The chat, with "You" replaced by "Seller" and "Earl or Earl Joseph" replace by "Earl"
-priority: The customer actively wants to see the property. URGENT would mean they want to move quickly OR want to sign on the property. LOW would be if they're not responding much. 
-tags: The full name with _ between words because this should always appear, and the fact that the customer wants to commuinicate via phone. We could add a second and third discretionary tag but there's no need.
-Conversation to process: {conversation}`;
+Input 2:
+John Smith messaged:
+Hi, I saw your listing
+Agent response:
+Hello! Which listing are you interested in?
+John Smith:
+The 2 bedroom condo on Oak Street
+Message from John:
+Is it still available?
+Response:
+Yes, it's available! Would you like to schedule a viewing?
+
+Output 2:
+{{
+  "title": "John Smith / 2Br Condo",
+  "description": "Buyer: Hi, I saw your listing\\nSeller: Hello! Which listing are you interested in?\\nBuyer: The 2 bedroom condo on Oak Street\\nBuyer: Is it still available?\\nSeller: Yes, it's available! Would you like to schedule a viewing?",
+  "priority": "MEDIUM",
+  "tags": ["2_Bedroom_Condo", "Oak_Street"]
+}}
+
+Now process this conversation: {conversation}`;
 
 export class LangSmithService {
   private model = new ChatOpenAI({
@@ -112,7 +136,11 @@ export class LangSmithService {
     return process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
   }
 
-  async processConversation(id: string): Promise<ProcessedTicketData> {
+  async processConversation(id: string): Promise<{
+    original: string;
+    processed: ProcessedTicketData;
+    runId: string;
+  }> {
     const runId = crypto.randomUUID();
     const projectName = process.env.LANGSMITH_PROJECT || 'default';
     const baseUrl = this.getApiUrl();
@@ -159,7 +187,11 @@ export class LangSmithService {
         end_time: Date.now(),
       });
 
-      return result;
+      return {
+        original: conversation.raw_content,
+        processed: result,
+        runId
+      };
     } catch (error) {
       // Update the conversation with error through the API
       await fetch(`${baseUrl}/api/langsmith?action=updateConversation&id=${id}`, {
@@ -396,26 +428,26 @@ export class LangSmithService {
       const template = `You are a real estate agent responding to a buyer inquiry. Based on the following context, suggest a response that matches the seller's communication style.
 
 Current Ticket Information:
-Title: {title}
-Description: {description}
-Status: {status}
-Priority: {priority}
-Tags: {tags}
+Title: {ticketTitle}
+Description: {ticketDescription}
+Status: {ticketStatus}
+Priority: {ticketPriority}
+Tags: {ticketTags}
 
 Current Conversation:
 {messages}
 
 Original Marketplace Conversation:
-{marketplace_conversation}
+{marketplaceConversation}
 
 Similar Tickets for Context:
-{similar_tickets}
+{similarTickets}
 
 Similar Buyer-Seller Interactions:
-{similar_messages}
+{similarMessages}
 
 Seller's Communication Style Examples:
-{seller_style}
+{sellerStyle}
 
 Based on the above context, generate a response that:
 1. Matches the seller's communication style (formality, length, tone)
@@ -431,16 +463,16 @@ Response (as the seller to the buyer):`;
       const prompt = new PromptTemplate({
         template,
         inputVariables: [
-          'title',
-          'description',
-          'status',
-          'priority',
-          'tags',
+          'ticketTitle',
+          'ticketDescription',
+          'ticketStatus',
+          'ticketPriority',
+          'ticketTags',
           'messages',
-          'marketplace_conversation',
-          'similar_tickets',
-          'similar_messages',
-          'seller_style'
+          'marketplaceConversation',
+          'similarTickets',
+          'similarMessages',
+          'sellerStyle'
         ],
       });
 
@@ -452,16 +484,16 @@ Response (as the seller to the buyer):`;
 
       // Run the chain
       const result = await chain.invoke({
-        title: ticket.title,
-        description: ticket.description,
-        status: ticket.status,
-        priority: ticket.priority,
-        tags: ticket.tags?.join(', ') || '',
+        ticketTitle: ticket.title,
+        ticketDescription: ticket.description,
+        ticketStatus: ticket.status,
+        ticketPriority: ticket.priority,
+        ticketTags: ticket.tags?.join(', ') || '',
         messages: formattedMessages,
-        marketplace_conversation: marketplaceConversation?.raw_content || 'No marketplace conversation available',
-        similar_tickets: formattedSimilarTickets || 'No similar tickets available',
-        similar_messages: formattedSimilarMessages || 'No similar messages available',
-        seller_style: formattedSellerStyle || 'No seller style examples available'
+        marketplaceConversation: marketplaceConversation?.raw_content || 'No marketplace conversation available',
+        similarTickets: formattedSimilarTickets || 'No similar tickets available',
+        similarMessages: formattedSimilarMessages || 'No similar messages available',
+        sellerStyle: formattedSellerStyle || 'No seller style examples available'
       });
 
       // Update run with success
@@ -655,6 +687,123 @@ Response (as the seller to the buyer):`;
       console.error('Failed to get trace URL:', error);
       return null;
     }
+  }
+
+  async provideConversationFeedback({
+    runId,
+    originalProcessed,
+    finalTicket,
+    feedbackText
+  }: {
+    runId: string;
+    originalProcessed: ProcessedTicketData;
+    finalTicket: ProcessedTicketData;
+    feedbackText?: string;
+  }) {
+    try {
+      // Create a feedback run tree
+      const pipeline = new RunTree({
+        name: "Conversation Processing Feedback",
+        run_type: "chain",
+        inputs: {
+          original_processed: originalProcessed
+        }
+      });
+      await pipeline.postRun();
+
+      // Create a child run for the user modification
+      const modificationRun = await pipeline.createChild({
+        name: "User Modification",
+        run_type: "tool",
+        inputs: {
+          original: originalProcessed,
+          feedback: feedbackText
+        }
+      });
+      await modificationRun.postRun();
+
+      // End the modification run with the changes
+      await modificationRun.end({
+        outputs: {
+          modified: finalTicket,
+          changes: this.analyzeTicketChanges(originalProcessed, finalTicket)
+        }
+      });
+      await modificationRun.patchRun();
+
+      // End the pipeline
+      await pipeline.end({
+        outputs: {
+          final_ticket: finalTicket,
+          feedback_provided: feedbackText
+        }
+      });
+      await pipeline.patchRun();
+
+      // Store as example in dataset
+      let dataset;
+      const datasetName = "conversation_examples";
+      const datasets = await this.langsmith.listDatasets();
+      
+      for await (const d of datasets) {
+        if (d.name === datasetName) {
+          dataset = d;
+          break;
+        }
+      }
+
+      if (!dataset) {
+        dataset = await this.langsmith.createDataset(datasetName, {
+          description: "High quality conversation processing examples with feedback"
+        });
+      }
+
+      // Store the example
+      await this.langsmith.createExample(
+        { original: originalProcessed },
+        { improved: finalTicket },
+        {
+          datasetId: dataset.id,
+          metadata: {
+            feedback: feedbackText,
+            changes: this.analyzeTicketChanges(originalProcessed, finalTicket)
+          }
+        }
+      );
+
+      return {
+        success: true,
+        traceUrl: this.getRunUrl(pipeline.id)
+      };
+    } catch (error) {
+      console.error('Failed to store conversation feedback:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  private analyzeTicketChanges(original: ProcessedTicketData, final: ProcessedTicketData): any {
+    const changes: string[] = [];
+    
+    if (original.title !== final.title) {
+      changes.push('title_modified');
+    }
+    if (original.description !== final.description) {
+      changes.push('description_modified');
+    }
+    if (original.priority !== final.priority) {
+      changes.push('priority_changed');
+    }
+    if (JSON.stringify(original.tags.sort()) !== JSON.stringify(final.tags.sort())) {
+      changes.push('tags_modified');
+    }
+
+    return {
+      type: changes.length > 0 ? 'content_improvement' : 'no_changes',
+      changes
+    };
   }
 }
 
