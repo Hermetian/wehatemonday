@@ -12,10 +12,24 @@ interface ProcessedTicketData {
   tags: string[];
 }
 
+interface SimilarMessage {
+  content: string;
+  is_internal: boolean;
+  ticket_id: string;
+}
+
+interface SimilarTicket {
+  title: string;
+  description: string;
+  tags: string[];
+  status: string;
+  priority: string;
+}
+
 const SYSTEM_TEMPLATE = `You are a helpful assistant that processes marketplace conversations. Given a conversation, you will:
 
 1. Create a title by combining the customer's name with a short product description (e.g., "John Smith / 3Br2Ba")
-2. Format the conversation with "Customer:" and "Me:" prefixes
+2. Format the conversation with "Buyer:" and "Seller:" prefixes
 3. Extract product details as tags
 4. Assess the customer's interest level
 
@@ -54,9 +68,9 @@ title: Earl Joseph 6Br2Ba
 description: Customer: Is this listing still available?
 Seller: It is
 Seller: Would you like to see it
-Earl: Where is it located again
+Buyer: Where is it located again
 Seller: 524 Hamilton Ave, Menlo Park 94025
-Earl: Can you send me your number so we can talk and set up a time I can come see the property my name is Earl number 628 303-8938
+Buyer: Can you send me your number so we can talk and set up a time I can come see the property my name is Earl number 628 303-8938
 priority: HIGH
 tags: 6_Beds_2_Baths_House, 524_Hamilton, phone_number
 
@@ -272,6 +286,69 @@ export class LangSmithService {
     return { runId: data.run_id };
   }
 
+  private async findSimilarTickets(ticket: any, limit: number = 3): Promise<SimilarTicket[]> {
+    const { data: tickets, error } = await this.adminClient
+      .from('tickets')
+      .select('title, description, tags, status, priority')
+      .neq('id', ticket.id)
+      .overlaps('tags', ticket.tags || [])
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Error finding similar tickets:', error);
+      return [];
+    }
+
+    return tickets;
+  }
+
+  private async findSimilarMessages(ticket: any, limit: number = 5): Promise<SimilarMessage[]> {
+    // First get similar ticket IDs
+    const { data: similarTickets } = await this.adminClient
+      .from('tickets')
+      .select('id')
+      .overlaps('tags', ticket.tags || [])
+      .neq('id', ticket.id)
+      .limit(10);
+
+    if (!similarTickets?.length) {
+      return [];
+    }
+
+    // Then get messages from those tickets
+    const { data: messages, error } = await this.adminClient
+      .from('messages')
+      .select('content, is_internal, ticket_id')
+      .in('ticket_id', similarTickets.map(t => t.id))
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Error finding similar messages:', error);
+      return [];
+    }
+
+    return messages;
+  }
+
+  private async findSellerMessages(limit: number = 10): Promise<SimilarMessage[]> {
+    // Get messages from the seller (non-internal messages only)
+    const { data: messages, error } = await this.adminClient
+      .from('messages')
+      .select('content, is_internal, ticket_id')
+      .eq('is_internal', false)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Error finding seller messages:', error);
+      return [];
+    }
+
+    return messages;
+  }
+
   async generateMessageSuggestion({ ticket, messages, marketplaceConversation }: {
     ticket: any;
     messages: any[];
@@ -281,49 +358,110 @@ export class LangSmithService {
     const projectName = process.env.LANGSMITH_PROJECT || 'default';
 
     try {
-      // Start a new run
+      // Find similar content and seller's message style
+      const [similarTickets, similarMessages, sellerMessages] = await Promise.all([
+        this.findSimilarTickets(ticket),
+        this.findSimilarMessages(ticket),
+        this.findSellerMessages()
+      ]);
+
+      // Format current conversation messages, clearly marking seller vs buyer
+      const formattedMessages = messages
+        .map(m => {
+          const prefix = m.is_internal ? '[INTERNAL] ' : 
+                        m.created_by_id === ticket.created_by_id ? 'Buyer: ' : 'Seller: ';
+          return `${prefix}${m.content}`;
+        })
+        .join('\n\n');
+
+      // Format similar tickets for context
+      const formattedSimilarTickets = similarTickets
+        .map(t => `Title: ${t.title}\nDescription: ${t.description}\nTags: ${t.tags?.join(', ')}\nStatus: ${t.status}\nPriority: ${t.priority}`)
+        .join('\n\n');
+
+      // Format similar messages, focusing on seller responses
+      const formattedSimilarMessages = similarMessages
+        .filter(m => !m.is_internal)  // Only include external messages
+        .map(m => `${m.content}`)
+        .join('\n\n');
+
+      // Format seller's message style examples
+      const formattedSellerStyle = sellerMessages
+        .map(m => `${m.content}`)
+        .join('\n\n');
+
+      // Start a new run with complete context
       await this.langsmith.createRun({
         name: 'generate_message_suggestion',
         run_type: 'chain',
-        inputs: { ticket_id: ticket.id },
+        inputs: {
+          ticket_id: ticket.id,
+          ticket_title: ticket.title,
+          ticket_description: ticket.description,
+          ticket_status: ticket.status,
+          ticket_priority: ticket.priority,
+          ticket_tags: ticket.tags,
+          message_count: messages.length,
+          has_marketplace_conversation: !!marketplaceConversation,
+          similar_tickets_count: similarTickets.length,
+          similar_messages_count: similarMessages.length,
+          seller_style_examples_count: sellerMessages.length
+        },
         start_time: Date.now(),
         project_name: projectName,
       });
 
       // Create the prompt template
-      const template = `You are a helpful customer service agent. Based on the following context, suggest a response to the customer.
+      const template = `You are a real estate agent responding to a buyer inquiry. Based on the following context, suggest a response that matches the seller's communication style.
 
-Ticket Information:
+Current Ticket Information:
 Title: {title}
 Description: {description}
 Status: {status}
 Priority: {priority}
 Tags: {tags}
 
-Previous Messages:
+Current Conversation:
 {messages}
 
 Original Marketplace Conversation:
 {marketplace_conversation}
 
-Generate a professional, helpful response that:
-1. Addresses any questions or concerns
-2. Provides relevant information
-3. Maintains a friendly and professional tone
-4. Is concise but comprehensive
-5. Includes any necessary follow-up questions
+Similar Tickets for Context:
+{similar_tickets}
 
-Response:`;
+Similar Buyer-Seller Interactions:
+{similar_messages}
+
+Seller's Communication Style Examples:
+{seller_style}
+
+Based on the above context, generate a response that:
+1. Matches the seller's communication style (formality, length, tone)
+2. Addresses the buyer's most recent questions or concerns
+3. Maintains consistency with previous responses in this conversation
+4. Provides clear, specific information about the property
+5. Is professional yet approachable
+6. Includes relevant follow-up questions or next steps
+7. Uses similar phrasing and terminology as other successful responses
+
+Response (as the seller to the buyer):`;
 
       const prompt = new PromptTemplate({
         template,
-        inputVariables: ['title', 'description', 'status', 'priority', 'tags', 'messages', 'marketplace_conversation'],
+        inputVariables: [
+          'title',
+          'description',
+          'status',
+          'priority',
+          'tags',
+          'messages',
+          'marketplace_conversation',
+          'similar_tickets',
+          'similar_messages',
+          'seller_style'
+        ],
       });
-
-      // Format messages for the prompt
-      const formattedMessages = messages
-        .map(m => `${m.is_internal ? '[INTERNAL] ' : ''}${m.content}`)
-        .join('\n\n');
 
       // Create the chain
       const chain = RunnableSequence.from([
@@ -340,6 +478,9 @@ Response:`;
         tags: ticket.tags?.join(', ') || '',
         messages: formattedMessages,
         marketplace_conversation: marketplaceConversation?.raw_content || 'No marketplace conversation available',
+        similar_tickets: formattedSimilarTickets || 'No similar tickets available',
+        similar_messages: formattedSimilarMessages || 'No similar messages available',
+        seller_style: formattedSellerStyle || 'No seller style examples available'
       });
 
       // Update run with success

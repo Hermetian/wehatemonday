@@ -20,6 +20,7 @@ import { Button } from './button'
 import { Toggle } from './toggle'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select'
+import React from 'react'
 
 const FONT_FAMILIES = [
   { label: 'Default', value: 'Inter var, sans-serif', class: 'font-sans' },
@@ -223,6 +224,13 @@ export function RichTextEditor({
     },
     immediatelyRender: false,
   })
+
+  // Update editor content when prop changes
+  React.useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      editor.commands.setContent(content);
+    }
+  }, [content, editor]);
 
   if (!editor) return null;
 

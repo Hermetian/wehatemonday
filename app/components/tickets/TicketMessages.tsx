@@ -31,6 +31,7 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id, tags 
   const [is_internal, setIsInternal] = React.useState(false);
   const [isLoadingSuggestion, setIsLoadingSuggestion] = React.useState(false);
   const utils = trpc.useContext();
+  const dialogRef = React.useRef<HTMLDivElement | null>(null);
 
   const { data: messages, isLoading } = trpc.message.list.useQuery({ ticket_id });
 
@@ -45,8 +46,31 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id, tags 
 
   const getSuggestion = trpc.message.getSuggestion.useMutation({
     onSuccess: (suggestion) => {
-      setContent(suggestion);
-      setContentHtml(suggestion);
+      // Check if we're in a dialog by looking for closest dialog element
+      const isInDialog = !!dialogRef.current?.closest('[role="dialog"]');
+      
+      // Format the suggestion for HTML display
+      const suggestionHtml = suggestion
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .map(line => `<p>${line}</p>`)
+        .join('');
+      
+      if (isInDialog) {
+        // For RichTextEditor, we need to set the HTML content
+        setContent(suggestionHtml);
+        setContentHtml(suggestionHtml);
+      } else {
+        // Create a new message and clear the input
+        createMessage.mutate({
+          content: suggestion,
+          content_html: suggestionHtml,
+          ticket_id,
+          is_internal: false
+        });
+      }
+      utils.message.list.invalidate();
     },
     onSettled: () => {
       setIsLoadingSuggestion(false);
@@ -55,7 +79,11 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id, tags 
 
   const handleGetSuggestion = async () => {
     setIsLoadingSuggestion(true);
-    await getSuggestion.mutateAsync({ ticket_id });
+    const isInDialog = !!dialogRef.current?.closest('[role="dialog"]');
+    await getSuggestion.mutateAsync({ 
+      ticket_id,
+      should_create_message: !isInDialog // Only create internal message if not in dialog
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,7 +104,7 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id, tags 
   const isMarketplace = tags.includes('Marketplace');
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" ref={dialogRef}>
       {/* Message List */}
       <div className="space-y-4">
         {isLoading ? (

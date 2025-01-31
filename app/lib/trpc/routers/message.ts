@@ -171,6 +171,7 @@ export const messageRouter = router({
   getSuggestion: protectedProcedure
     .input(z.object({
       ticket_id: z.string(),
+      should_create_message: z.boolean().default(true),
     }))
     .mutation(async ({ input, ctx }) => {
       try {
@@ -208,6 +209,32 @@ export const messageRouter = router({
           marketplaceConversation
         });
 
+        if (input.should_create_message) {
+          // Create an internal message with the suggestion
+          const formattedSuggestion = `***SUGGESTED RESPONSE***\n${suggestion}`;
+          const { error: createError } = await ctx.supabase
+            .from('messages')
+            .insert({
+              content: formattedSuggestion,
+              content_html: formattedSuggestion.replace(/\n/g, '<br>'),
+              ticket_id: input.ticket_id,
+              is_internal: true,
+              created_by_id: ctx.user.id,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+
+          if (createError) {
+            console.error('Error creating suggestion message:', createError);
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: 'Failed to create suggestion message',
+              cause: createError,
+            });
+          }
+        }
+
+        // Return just the suggestion string
         return suggestion;
       } catch (error) {
         console.error('Error getting message suggestion:', error);
