@@ -2,19 +2,23 @@ import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { JsonOutputParser } from '@langchain/core/output_parsers';
-import { Client, RunTree, type RunTreeConfig } from 'langsmith';
+import { Client, RunTree } from 'langsmith';
 
 interface ProcessedTicketData {
+  id: string;
   title: string;
   description: string;
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  status: string;
   tags: string[];
+  created_by_id: string;
 }
 
 interface SimilarMessage {
   content: string;
   is_internal: boolean;
   ticket_id: string;
+  created_by_id: string;
 }
 
 interface SimilarTicket {
@@ -31,6 +35,24 @@ interface SuggestionFeedback {
   finalMessage: string;
   feedbackScore: number;
   feedbackText?: string;
+}
+
+interface ChangeAnalysis {
+  type: string;
+  changes: string[];
+}
+
+interface Example {
+  original: string;
+  improved: string;
+  changes: ChangeAnalysis;
+  feedback?: string;
+}
+
+interface TicketChanges {
+  changes: string[];
+  type: string;
+  details?: Record<string, unknown>;
 }
 
 const SYSTEM_TEMPLATE = `You are a helpful assistant that processes marketplace conversations. Given a conversation, you will:
@@ -326,7 +348,7 @@ export class LangSmithService {
     return { runId };
   }
 
-  private async findSimilarTickets(ticket: any, limit: number = 3): Promise<SimilarTicket[]> {
+  private async findSimilarTickets(ticket: ProcessedTicketData): Promise<SimilarTicket[]> {
     try {
       const baseUrl = this.getApiUrl();
       const response = await fetch(`${baseUrl}/api/langsmith?action=similarTickets&ticketId=${ticket.id}&tags=${ticket.tags?.join(',')}`);
@@ -338,7 +360,7 @@ export class LangSmithService {
     }
   }
 
-  private async findSimilarMessages(ticket: any, limit: number = 5): Promise<SimilarMessage[]> {
+  private async findSimilarMessages(ticket: ProcessedTicketData): Promise<SimilarMessage[]> {
     try {
       const baseUrl = this.getApiUrl();
       const response = await fetch(`${baseUrl}/api/langsmith?action=similarMessages&ticketId=${ticket.id}&tags=${ticket.tags?.join(',')}`);
@@ -350,7 +372,7 @@ export class LangSmithService {
     }
   }
 
-  private async findSellerMessages(limit: number = 10): Promise<SimilarMessage[]> {
+  private async findSellerMessages(): Promise<SimilarMessage[]> {
     try {
       const baseUrl = this.getApiUrl();
       const response = await fetch(`${baseUrl}/api/langsmith?action=sellerMessages&ticketId=any`);
@@ -362,10 +384,14 @@ export class LangSmithService {
     }
   }
 
-  async generateMessageSuggestion({ ticket, messages, marketplaceConversation }: {
-    ticket: any;
-    messages: any[];
-    marketplaceConversation: { raw_content: string; processed_content: any; } | null;
+  async generateMessageSuggestion({ 
+    ticket, 
+    messages, 
+    marketplaceConversation 
+  }: {
+    ticket: ProcessedTicketData;
+    messages: SimilarMessage[];
+    marketplaceConversation: { raw_content: string; processed_content: ProcessedTicketData; } | null;
   }): Promise<string> {
     const runId = crypto.randomUUID();
     const projectName = process.env.LANGSMITH_PROJECT || 'default';
@@ -541,19 +567,31 @@ Response (as the seller to the buyer):`;
     // Analyze what changes were made
     const changes = this.analyzeChanges(originalSuggestion, finalMessage);
 
-    await this.langsmith.createFeedback(
-      runId,
-      "suggestion_quality",
-      {
-        score: 1, // Always consider user feedback as high quality
-        comment: feedbackText,
-        value: {  // Use value instead of metadata
-          similarity_score: similarity,
-          changes_summary: changes,
-          modification_type: changes.type
+    const baseUrl = this.getApiUrl();
+    const response = await fetch(`${baseUrl}/api/langsmith/feedback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        runId,
+        feedbackType: "suggestion_quality",
+        feedback: {
+          score: 1, // Always consider user feedback as high quality
+          comment: feedbackText,
+          value: {  // Use value instead of metadata
+            similarity_score: similarity,
+            changes_summary: changes,
+            modification_type: changes.type
+          }
         }
-      }
-    );
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to create feedback: ${error}`);
+    }
 
     // Store as example since we consider all user feedback valuable
     await this.storeAsExample({
@@ -565,17 +603,40 @@ Response (as the seller to the buyer):`;
   }
 
   private calculateSimilarity(text1: string, text2: string): number {
-    // Implement text similarity calculation
-    // Could use cosine similarity of embeddings
-    return 0.5; // Placeholder
+    // Simple Jaccard similarity implementation
+    const set1 = new Set(text1.toLowerCase().split(/\s+/));
+    const set2 = new Set(text2.toLowerCase().split(/\s+/));
+    
+    const intersection = new Set([...set1].filter(x => set2.has(x)));
+    const union = new Set([...set1, ...set2]);
+    
+    return intersection.size / union.size;
   }
 
-  private analyzeChanges(original: string, final: string): any {
-    // Implement diff analysis to understand what kinds of changes were made
-    // Could use diff-match-patch or similar
+  private analyzeChanges(original: string, final: string): ChangeAnalysis {
+    const changes: string[] = [];
+    
+    // Compare lengths
+    if (final.length !== original.length) {
+      changes.push(final.length > original.length ? 'content_added' : 'content_removed');
+    }
+    
+    // Compare word counts
+    const originalWords = original.split(/\s+/).length;
+    const finalWords = final.split(/\s+/).length;
+    if (finalWords !== originalWords) {
+      changes.push('length_modified');
+    }
+    
+    // Check for significant rewording (using similarity threshold)
+    const similarity = this.calculateSimilarity(original, final);
+    if (similarity < 0.8) {
+      changes.push('significant_rewording');
+    }
+    
     return {
-      type: 'style_improvement',
-      changes: ['tone adjusted', 'clarity improved']
+      type: changes.includes('significant_rewording') ? 'major_revision' : 'style_improvement',
+      changes
     };
   }
 
@@ -585,89 +646,28 @@ Response (as the seller to the buyer):`;
     return `${baseUrl}/projects/${project}/runs/${runId}`;
   }
 
-  private async storeAsExample(example: any) {
+  private async storeAsExample(example: Example) {
     try {
-      // Create a top-level run for the feedback
-      const pipeline = new RunTree({
-        name: "Suggestion Feedback",
-        run_type: "chain",
-        inputs: {
-          original_suggestion: example.original
-        }
+      const baseUrl = this.getApiUrl();
+      const response = await fetch(`${baseUrl}/api/langsmith/example`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ example }),
       });
-      await pipeline.postRun();
 
-      // Store the run ID for URL retrieval
-      const pipelineRunId = pipeline.id;
-
-      // Create a child run for the user modification
-      const modificationRun = await pipeline.createChild({
-        name: "User Modification",
-        run_type: "tool",
-        inputs: {
-          original: example.original,
-          feedback: example.feedback
-        }
-      });
-      await modificationRun.postRun();
-
-      // End the modification run with the changes
-      await modificationRun.end({
-        outputs: {
-          modified: example.improved,
-          changes: example.changes
-        }
-      });
-      await modificationRun.patchRun();
-
-      // End the pipeline with the final results
-      await pipeline.end({
-        outputs: {
-          final_message: example.improved,
-          feedback_provided: example.feedback,
-          changes_summary: example.changes
-        }
-      });
-      await pipeline.patchRun();
-
-      // Get or create the dataset for future training
-      let dataset;
-      const datasetName = "suggestion_examples";
-      const datasets = await this.langsmith.listDatasets();
-      
-      for await (const d of datasets) {
-        if (d.name === datasetName) {
-          dataset = d;
-          break;
-        }
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Failed to store example: ${error}`);
       }
 
-      if (!dataset) {
-        dataset = await this.langsmith.createDataset(datasetName, {
-          description: "High quality suggestion examples with feedback"
-        });
-      }
-
-      // Store the example in the dataset
-      await this.langsmith.createExample(
-        { original: example.original },
-        { improved: example.improved },
-        {
-          datasetId: dataset.id,
-          metadata: {
-            feedback: example.feedback,
-            changes: example.changes
-          }
-        }
-      );
-
-      // Get the trace URL
-      const traceUrl = this.getRunUrl(pipelineRunId);
-      console.log('Trace URL:', traceUrl);
+      const result = await response.json();
+      console.log('Trace URL:', result.traceUrl);
       
       return {
         success: true,
-        traceUrl
+        traceUrl: result.traceUrl
       };
     } catch (error) {
       console.error('Failed to store example:', error);
@@ -681,7 +681,7 @@ Response (as the seller to the buyer):`;
   // Add a new method to get trace URL
   async getTraceUrl(runId: string): Promise<string | null> {
     try {
-      const run = await this.langsmith.readRun(runId);
+      await this.langsmith.readRun(runId);
       return this.getRunUrl(runId);
     } catch (error) {
       console.error('Failed to get trace URL:', error);
@@ -701,13 +701,14 @@ Response (as the seller to the buyer):`;
     feedbackText?: string;
   }) {
     try {
-      // Create a feedback run tree
+      // Create a feedback run tree with parent run ID
       const pipeline = new RunTree({
         name: "Conversation Processing Feedback",
         run_type: "chain",
         inputs: {
           original_processed: originalProcessed
-        }
+        },
+        parent_run_id: runId  // Link to original run
       });
       await pipeline.postRun();
 
@@ -784,7 +785,7 @@ Response (as the seller to the buyer):`;
     }
   }
 
-  private analyzeTicketChanges(original: ProcessedTicketData, final: ProcessedTicketData): any {
+  private analyzeTicketChanges(original: ProcessedTicketData, final: ProcessedTicketData): TicketChanges {
     const changes: string[] = [];
     
     if (original.title !== final.title) {
@@ -801,8 +802,8 @@ Response (as the seller to the buyer):`;
     }
 
     return {
-      type: changes.length > 0 ? 'content_improvement' : 'no_changes',
-      changes
+      changes,
+      type: 'ticket_modification'
     };
   }
 }

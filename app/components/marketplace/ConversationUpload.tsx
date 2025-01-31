@@ -22,8 +22,6 @@ export function ConversationUpload() {
   const [originalProcessed, setOriginalProcessed] = useState<ProcessedTicketData | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
 
-  const utils = trpc.useContext();
-
   const createConversation = trpc.marketplace.create.useMutation({
     onSuccess: (data) => {
       processConversation.mutate({ id: data.id });

@@ -9,7 +9,6 @@ import { RichTextEditor } from '@/app/components/ui/rich-text-editor';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { Badge } from '@/app/components/ui/badge';
 import { X } from 'lucide-react';
-import { trpc } from '@/app/lib/trpc/client';
 
 // Define the ProcessedTicketData type locally since it's not exported
 interface ProcessedTicketData {

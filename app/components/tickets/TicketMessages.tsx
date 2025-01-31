@@ -275,7 +275,7 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id, tags 
               value={feedbackText}
               onChange={(e) => setFeedbackText(e.target.value)}
               placeholder="What did you change in the suggestion and why? (optional)"
-              className="min-h-[100px]"
+              className="min-h-[100px] text-black"
             />
           </div>
           

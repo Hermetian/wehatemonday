@@ -19,5 +19,5 @@ declare module 'nuqs' {
 
   export function createSearchParamsCache(
     searchParams: ReadonlyURLSearchParams
-  ): Map<string, any>;
+  ): Map<string, string | string[]>;
 } 

@@ -4,14 +4,10 @@ import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
 import { trpc } from '@/app/lib/trpc/client';
 import { Alert, AlertTitle, AlertDescription } from '../ui/alert';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Badge } from '../ui/badge';
-import { Loader2, AlertCircle, X } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/lib/auth/AuthContext';
 import { marked } from 'marked';
-import { Input } from '../ui/input';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
 import { ProcessedTicketForm } from './ProcessedTicketForm';
 import type { TicketPriority } from '@/app/types/tickets';
 
@@ -26,15 +22,6 @@ export interface ProcessedTicket {
   description: string;
   priority: TicketPriority;
   tags: string[];
-}
-
-// Type predicate function
-function isProcessedTicket(ticket: ProcessedTicket | null): ticket is ProcessedTicket {
-  return ticket !== null && 
-    typeof ticket.title === 'string' &&
-    typeof ticket.description === 'string' &&
-    typeof ticket.priority === 'string' &&
-    Array.isArray(ticket.tags);
 }
 
 export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
@@ -231,7 +218,7 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
               <>
                 <div className="bg-[#1E2D3D] p-4 rounded-lg border border-[#2E3D4D]">
                   <p className="text-sm text-muted-foreground mb-2">
-                    Paste your marketplace conversation below. Make sure it includes proper speaker labels (e.g., "Customer:", "Agent:").
+                    Paste your marketplace conversation below. Make sure it includes proper speaker labels (e.g., &quot;Customer:&quot;, &quot;Agent:&quot;).
                   </p>
                   <Textarea
                     value={content}
@@ -256,7 +243,24 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
                     className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium"
                     onClick={() => {
                       setWaitForProcessing(true);
-                      handleSubmit(new Event('submit') as any);
+                      const syntheticEvent = {
+                        preventDefault: () => {},
+                        target: null,
+                        currentTarget: null,
+                        bubbles: false,
+                        cancelable: true,
+                        defaultPrevented: false,
+                        eventPhase: 0,
+                        isTrusted: true,
+                        nativeEvent: null,
+                        timeStamp: Date.now(),
+                        type: 'submit',
+                        isDefaultPrevented: () => false,
+                        isPropagationStopped: () => false,
+                        persist: () => {},
+                        stopPropagation: () => {},
+                      } as unknown as React.FormEvent<HTMLFormElement>;
+                      handleSubmit(syntheticEvent);
                     }}
                   >
                     {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

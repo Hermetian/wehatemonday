@@ -100,7 +100,7 @@ const PRIORITY_COLORS: Record<TicketPriority, string> = {
 };
 
 export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
-  const { role, user } = useAuth();
+  const { role } = useAuth();
   const utils = trpc.useContext();
   const [showCompleted, setShowCompleted] = React.useState(false);
   const [assignedToMe, setAssignedToMe] = React.useState(false);
