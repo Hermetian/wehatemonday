@@ -518,13 +518,17 @@ export const teamRouter = router({
         }
 
         // Log the action
-        await createAuditLog(ctx.supabase, {
-          action: 'ADD_TEAM_MEMBER',
+        await createAuditLog({
+          action: 'CREATE',
+          entity: 'TEAM',
+          entityId: input.teamId,
           userId: ctx.user.id,
-          details: {
+          oldData: null,
+          newData: {
             teamId: input.teamId,
-            addedUserId: input.userId,
+            userId: input.userId
           },
+          supabase: ctx.supabase
         });
 
         return { success: true };

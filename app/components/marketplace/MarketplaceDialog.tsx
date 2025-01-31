@@ -18,10 +18,13 @@ interface MarketplaceDialogProps {
 
 // Share this interface with ProcessedTicketForm
 export interface ProcessedTicket {
+  id?: string;
   title: string;
   description: string;
   priority: TicketPriority;
+  status?: string;
   tags: string[];
+  created_by_id?: string;
 }
 
 export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({

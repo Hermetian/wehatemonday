@@ -54,12 +54,25 @@ export function ProcessedTicketForm({
 
     // If we have a runId, send feedback to LangSmith
     if (runId) {
-      await provideFeedback.mutateAsync({
+      // Add required fields for feedback
+      const feedbackData = {
         runId,
-        originalProcessed: ticket,
-        finalTicket: editedTicket,
+        originalProcessed: {
+          ...ticket,
+          id: ticket.id || crypto.randomUUID(),
+          status: ticket.status || 'OPEN',
+          created_by_id: ticket.created_by_id || crypto.randomUUID()
+        },
+        finalTicket: {
+          ...editedTicket,
+          id: editedTicket.id || crypto.randomUUID(),
+          status: editedTicket.status || 'OPEN',
+          created_by_id: editedTicket.created_by_id || crypto.randomUUID()
+        },
         feedbackText: 'Manual edits to processed ticket'
-      });
+      };
+
+      await provideFeedback.mutateAsync(feedbackData);
     }
 
     onSaveChanges(editedTicket);

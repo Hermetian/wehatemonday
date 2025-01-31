@@ -3,14 +3,6 @@ import { publicProcedure, router, protectedProcedure } from '../trpc';
 import { langSmithService } from '@/app/lib/services/langsmith';
 import { TRPCError } from '@trpc/server';
 
-// Define the ProcessedTicketData schema
-const ProcessedTicketDataSchema = z.object({
-  title: z.string(),
-  description: z.string(),
-  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
-  tags: z.array(z.string())
-});
-
 export const marketplaceRouter = router({
   create: publicProcedure
     .input(z.object({
@@ -73,8 +65,24 @@ export const marketplaceRouter = router({
   provideFeedback: protectedProcedure
     .input(z.object({
       runId: z.string(),
-      originalProcessed: ProcessedTicketDataSchema,
-      finalTicket: ProcessedTicketDataSchema,
+      originalProcessed: z.object({
+        id: z.string(),
+        title: z.string(),
+        description: z.string(),
+        priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
+        status: z.string(),
+        tags: z.array(z.string()),
+        created_by_id: z.string()
+      }),
+      finalTicket: z.object({
+        id: z.string(),
+        title: z.string(),
+        description: z.string(),
+        priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
+        status: z.string(),
+        tags: z.array(z.string()),
+        created_by_id: z.string()
+      }),
       feedbackText: z.string().optional()
     }))
     .mutation(async ({ input }) => {

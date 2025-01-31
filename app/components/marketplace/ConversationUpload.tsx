@@ -52,12 +52,23 @@ export function ConversationUpload() {
   const handleTicketCreated = async (ticketData: ProcessedTicketData) => {
     // If we have feedback data, send it
     if (originalProcessed && runId) {
-      await provideFeedback.mutateAsync({
+      const feedbackData = {
         runId,
-        originalProcessed,
-        finalTicket: ticketData,
+        originalProcessed: {
+          ...originalProcessed,
+          id: crypto.randomUUID(),
+          status: 'OPEN',
+          created_by_id: crypto.randomUUID()
+        },
+        finalTicket: {
+          ...ticketData,
+          id: crypto.randomUUID(),
+          status: 'OPEN',
+          created_by_id: crypto.randomUUID()
+        },
         feedbackText: 'Manual ticket creation from processed conversation'
-      });
+      };
+      await provideFeedback.mutateAsync(feedbackData);
     }
 
     setShowCreateTicket(false);
