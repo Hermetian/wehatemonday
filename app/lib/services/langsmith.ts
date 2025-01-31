@@ -3,6 +3,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { JsonOutputParser } from '@langchain/core/output_parsers';
+import { Client, Run } from 'langsmith';
 
 interface ProcessedTicketData {
   title: string;
@@ -32,9 +33,30 @@ export class LangSmithService {
     modelName: 'gpt-4-turbo-preview',
     temperature: 0.2,
   });
+  private langsmith: Client;
+
+  constructor() {
+    // Initialize LangSmith client
+    this.langsmith = new Client({
+      apiUrl: process.env.LANGSMITH_API_URL,
+      apiKey: process.env.LANGSMITH_API_KEY,
+    });
+  }
 
   async processConversation(id: string): Promise<ProcessedTicketData> {
+    const runId = crypto.randomUUID();
+    const projectName = process.env.LANGSMITH_PROJECT || 'default';
+    
     try {
+      // Start a new run
+      await this.langsmith.createRun({
+        name: 'process_marketplace_conversation',
+        run_type: 'chain',
+        inputs: { conversation_id: id },
+        start_time: Date.now(),
+        project_name: projectName,
+      });
+
       // Get the conversation content
       const { data: conversation, error } = await this.adminClient
         .from('marketplace_conversations')
@@ -43,11 +65,15 @@ export class LangSmithService {
         .single();
 
       if (error) {
+        await this.langsmith.updateRun(runId, {
+          error: error.message,
+          end_time: Date.now(),
+        });
         throw error;
       }
 
       // Process the conversation
-      const result = await this.processContent(conversation.raw_content);
+      const result = await this.processContent(conversation.raw_content, runId);
 
       // Update the conversation with the processed content
       const { error: updateError } = await this.adminClient
@@ -59,8 +85,18 @@ export class LangSmithService {
         .eq('id', id);
 
       if (updateError) {
+        await this.langsmith.updateRun(runId, {
+          error: updateError.message,
+          end_time: Date.now(),
+        });
         throw updateError;
       }
+
+      // Update run with success
+      await this.langsmith.updateRun(runId, {
+        outputs: { result },
+        end_time: Date.now(),
+      });
 
       return result;
     } catch (error) {
@@ -73,12 +109,33 @@ export class LangSmithService {
         })
         .eq('id', id);
 
+      // Update run with error
+      if (error instanceof Error) {
+        await this.langsmith.updateRun(runId, {
+          error: error.message,
+          end_time: Date.now(),
+        });
+      }
+
       throw error;
     }
   }
 
-  private async processContent(content: string): Promise<ProcessedTicketData> {
+  private async processContent(content: string, parentRunId?: string): Promise<ProcessedTicketData> {
+    const runId = crypto.randomUUID();
+    const projectName = process.env.LANGSMITH_PROJECT || 'default';
+    
     try {
+      // Create a new run for content processing
+      await this.langsmith.createRun({
+        name: 'process_content',
+        run_type: 'chain',
+        inputs: { content },
+        parent_run_id: parentRunId,
+        start_time: Date.now(),
+        project_name: projectName,
+      });
+
       const prompt = PromptTemplate.fromTemplate(SYSTEM_TEMPLATE);
       const outputParser = new JsonOutputParser<ProcessedTicketData>();
 
@@ -88,18 +145,51 @@ export class LangSmithService {
         outputParser,
       ]);
 
+      // Run the chain with tracing
       const result = await chain.invoke({
         conversation: content
+      }, {
+        callbacks: [{
+          handleLLMEnd: async (output) => {
+            await this.langsmith.createRun({
+              name: 'llm_completion',
+              run_type: 'llm',
+              inputs: { prompt: output.generations[0][0].text },
+              outputs: { completion: output.generations[0][0].text },
+              parent_run_id: runId,
+              start_time: Date.now(),
+              end_time: Date.now(),
+              project_name: projectName,
+            });
+          }
+        }]
       });
 
       // Post-process the result
-      return {
+      const processedResult = {
         ...result,
         priority: this.validatePriority(result.priority),
         tags: this.cleanTags(result.tags)
       };
+
+      // Update run with success
+      await this.langsmith.updateRun(runId, {
+        outputs: { result: processedResult },
+        end_time: Date.now(),
+      });
+
+      return processedResult;
     } catch (error) {
       console.error('Error processing content:', error);
+
+      // Update run with error
+      if (error instanceof Error) {
+        await this.langsmith.updateRun(runId, {
+          error: error.message,
+          end_time: Date.now(),
+        });
+      }
+
       throw error;
     }
   }

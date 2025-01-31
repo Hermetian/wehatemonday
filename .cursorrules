@@ -1,6 +1,6 @@
 You are an expert senior software engineer specializing in modern web development, with deep expertise in TypeScript, React 18, Next.js 15 (App Router), Shadcn UI, Radix UI, and Tailwind CSS. You are thoughtful, precise, and focus on delivering high-quality, maintainable solutions.
 
-## Database Weirdness READ ME FIRST
+## Database Schema
 The project is being migrated from Prisma to Supabase. The database schema has been updated but some relics remain. The following tables are the correct ones: 
 - audit_logs
 - messages

@@ -44,6 +44,7 @@ interface RawTicket {
   customer_id: string;
   assigned_to_id: string | null;
   created_by_id: string;
+  last_updated_by_id: string | null;
   tags: string[];
   created_by: {
     name: string | null;
@@ -56,7 +57,7 @@ interface RawTicket {
   last_updated_by: {
     name: string | null;
     email: string | null;
-  };
+  } | null;
   message_count: number;
   created_at: string;
   updated_at: string;
@@ -96,11 +97,17 @@ const PRIORITY_COLORS: Record<TicketPriority, string> = {
 };
 
 export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const utils = trpc.useContext();
   const [showCompleted, setShowCompleted] = React.useState(false);
-  const [sortBy, setSortBy] = React.useState<'created_at' | 'updated_at'>('updated_at');
-  const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('desc');
+  const [assignedToMe, setAssignedToMe] = React.useState(false);
+  const [sortCriteria, setSortCriteria] = React.useState<Array<{
+    field: 'priority' | 'updated_at';
+    order: 'asc' | 'desc';
+  }>>([
+    { field: 'priority', order: 'desc' },
+    { field: 'updated_at', order: 'desc' }
+  ]);
   const [selectedTags, setSelectedTags] = React.useState<string[]>([]);
   const [includeUntagged, setIncludeUntagged] = React.useState(false);
   const [isSortMenuOpen, setIsSortMenuOpen] = React.useState(false);
@@ -132,8 +139,8 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     {
       limit: 10,
       show_completed: showCompleted,
-      sort_by: sortBy,
-      sort_order: sortOrder,
+      assigned_to_me: assignedToMe,
+      sort_criteria: sortCriteria,
       tags: filterByTeamTags ? teamTags || [] : selectedTags,
       include_untagged: includeUntagged,
       ...(filterByUser ? { customer_id: filterByUser } : {}),
@@ -147,6 +154,8 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
   const tickets = React.useMemo(() => {
     if (!ticketsData?.pages) return [];
     
+    // Since we're using proper cursor-based pagination with stable sorting,
+    // we can safely concatenate the pages
     return ticketsData.pages.flatMap((page) => 
       page.tickets.map((rawTicket): ProcessedTicket => {
         // Ensure the data matches our expected types
@@ -188,17 +197,29 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     const { active, over } = event;
     
     if (over && active.id !== over.id) {
-      const oldIndex = ['created_at', 'updated_at'].findIndex(config => config === active.id);
-      const newIndex = ['created_at', 'updated_at'].findIndex(config => config === over.id);
-      
-      if (oldIndex !== -1 && newIndex !== -1) {
-        setSortBy(oldIndex < newIndex ? 'updated_at' : 'created_at');
-      }
+      setSortCriteria(prev => {
+        const oldIndex = prev.findIndex(item => item.field === active.id);
+        const newIndex = prev.findIndex(item => item.field === over.id);
+        
+        if (oldIndex !== -1 && newIndex !== -1) {
+          const newCriteria = [...prev];
+          const [movedItem] = newCriteria.splice(oldIndex, 1);
+          newCriteria.splice(newIndex, 0, movedItem);
+          return newCriteria;
+        }
+        return prev;
+      });
     }
   };
 
-  const toggleSortDirection = () => {
-    setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+  const toggleSortDirection = (field: 'priority' | 'updated_at') => {
+    setSortCriteria(prev => 
+      prev.map(criteria => 
+        criteria.field === field 
+          ? { ...criteria, order: criteria.order === 'asc' ? 'desc' : 'asc' }
+          : criteria
+      )
+    );
   };
 
   const handleLoadMore = () => {
@@ -236,6 +257,19 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
               </label>
             </div>
 
+            {/* Assigned to me toggle */}
+            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/20">
+              <Checkbox
+                id="assigned-to-me"
+                checked={assignedToMe}
+                onCheckedChange={(checked: boolean) => setAssignedToMe(checked)}
+                className="border-white/50 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+              />
+              <label htmlFor="assigned-to-me" className="text-sm text-white font-medium select-none">
+                Assigned to me
+              </label>
+            </div>
+
             {/* Filter by team tags toggle */}
             <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/20">
               <Checkbox
@@ -267,19 +301,23 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
                   onDragEnd={handleDragEnd}
                 >
                   <SortableContext
-                    items={['created_at', 'updated_at']}
+                    items={sortCriteria.map(c => c.field)}
                     strategy={verticalListSortingStrategy}
                   >
                     <div className="space-y-1">
-                      {['created_at', 'updated_at'].map((config, index) => (
+                      {sortCriteria.map((criteria, index) => (
                         <SortableItem
-                          key={config}
-                          id={config}
-                          label={config === 'created_at' ? 'Created At' : 'Last Updated'}
+                          key={criteria.field}
+                          id={criteria.field}
+                          label={
+                            criteria.field === 'priority'
+                              ? 'Priority'
+                              : 'Last Updated'
+                          }
                           isActive={true}
                           order={index + 1}
-                          direction={sortBy === config ? sortOrder : 'desc'}
-                          onDirectionChange={() => toggleSortDirection()}
+                          direction={criteria.order}
+                          onDirectionChange={() => toggleSortDirection(criteria.field)}
                         />
                       ))}
                     </div>
@@ -324,13 +362,14 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
             </DropdownMenu>
 
             {/* Clear filters */}
-            {(selectedTags.length > 0 || includeUntagged) && (
+            {(selectedTags.length > 0 || includeUntagged || assignedToMe) && (
               <Button
                 variant="outline"
                 className="gap-2"
                 onClick={() => {
                   setSelectedTags([]);
                   setIncludeUntagged(false);
+                  setAssignedToMe(false);
                 }}
               >
                 <X className="h-4 w-4" />
@@ -369,6 +408,19 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
             </label>
           </div>
 
+          {/* Assigned to me toggle */}
+          <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/20">
+            <Checkbox
+              id="assigned-to-me"
+              checked={assignedToMe}
+              onCheckedChange={(checked: boolean) => setAssignedToMe(checked)}
+              className="border-white/50 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+            />
+            <label htmlFor="assigned-to-me" className="text-sm text-white font-medium select-none">
+              Assigned to me
+            </label>
+          </div>
+
           {/* Filter by team tags toggle */}
           <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/20">
             <Checkbox
@@ -400,19 +452,23 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext
-                  items={['created_at', 'updated_at']}
+                  items={sortCriteria.map(c => c.field)}
                   strategy={verticalListSortingStrategy}
                 >
                   <div className="space-y-1">
-                    {['created_at', 'updated_at'].map((config, index) => (
+                    {sortCriteria.map((criteria, index) => (
                       <SortableItem
-                        key={config}
-                        id={config}
-                        label={config === 'created_at' ? 'Created At' : 'Last Updated'}
+                        key={criteria.field}
+                        id={criteria.field}
+                        label={
+                          criteria.field === 'priority'
+                            ? 'Priority'
+                            : 'Last Updated'
+                        }
                         isActive={true}
                         order={index + 1}
-                        direction={sortBy === config ? sortOrder : 'desc'}
-                        onDirectionChange={() => toggleSortDirection()}
+                        direction={criteria.order}
+                        onDirectionChange={() => toggleSortDirection(criteria.field)}
                       />
                     ))}
                   </div>
@@ -457,13 +513,14 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
           </DropdownMenu>
 
           {/* Clear filters */}
-          {(selectedTags.length > 0 || includeUntagged) && (
+          {(selectedTags.length > 0 || includeUntagged || assignedToMe) && (
             <Button
               variant="outline"
               className="gap-2"
               onClick={() => {
                 setSelectedTags([]);
                 setIncludeUntagged(false);
+                setAssignedToMe(false);
               }}
             >
               <X className="h-4 w-4" />
@@ -564,7 +621,11 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
               <div>Created: {new Date(ticket.created_at).toLocaleDateString()}</div>
               <div className="flex items-center gap-1">
                 <span>Last updated: {new Date(ticket.updated_at).toLocaleString()}</span>
-                <span>by {ticket.last_updated_by.name || ticket.last_updated_by.email}</span>
+                <span>by {
+                  ticket.last_updated_by
+                    ? ticket.last_updated_by.name || ticket.last_updated_by.email || 'unknown'
+                    : 'unknown'
+                }</span>
               </div>
             </div>
           </div>
@@ -613,5 +674,3 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
     </div>
   );
 };
-
-export default TicketList;

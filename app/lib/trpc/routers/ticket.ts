@@ -79,6 +79,7 @@ export const ticketRouter = router({
           .insert([{
             ...input,
             status: TicketStatus.OPEN,
+            last_updated_by_id: ctx.user.id,
           }])
           .select()
           .single();
@@ -118,9 +119,12 @@ export const ticketRouter = router({
       priority: z.array(z.nativeEnum(TicketPriority)).optional(),
       tags: z.array(z.string()).default([]),
       include_untagged: z.boolean().default(false),
+      assigned_to_me: z.boolean().default(false),
       cursor: z.string().nullish(),
-      sort_by: z.enum(['created_at', 'updated_at']).default('updated_at'),
-      sort_order: z.enum(['asc', 'desc']).default('desc'),
+      sort_criteria: z.array(z.object({
+        field: z.enum(['priority', 'updated_at']),
+        order: z.enum(['asc', 'desc'])
+      })).default([{ field: 'priority', order: 'desc' }, { field: 'updated_at', order: 'desc' }]),
       show_completed: z.boolean().default(false)
     }))
     .query(async ({ ctx, input }) => {
@@ -132,6 +136,7 @@ export const ticketRouter = router({
             *,
             created_by:created_by_id(id, name, email),
             assigned_to:assigned_to_id(id, name, email),
+            last_updated_by:last_updated_by_id(id, name, email),
             messages(id)
           `);
 
@@ -148,26 +153,56 @@ export const ticketRouter = router({
           query.in('priority', input.priority);
         }
 
+        if (input.assigned_to_me) {
+          query.eq('assigned_to_id', ctx.user.id);
+        }
+
         if (input.tags.length > 0) {
           query.overlaps('tags', input.tags);
         } else if (!input.include_untagged) {
-          query.not('tags', 'is', null);
+          query.not('tags', 'is', null)
+            .not('tags', 'eq', '{}');
         }
 
-        // Handle pagination
+        // Apply sorting
+        for (const criteria of input.sort_criteria) {
+          const isAscending = criteria.order === 'asc';
+          
+          switch (criteria.field) {
+            case 'priority':
+              // Sort by priority (using enum ordering: URGENT > HIGH > MEDIUM > LOW)
+              query.order('priority', {
+                ascending: isAscending,
+                nullsFirst: false
+              });
+              break;
+            
+            case 'updated_at':
+              // Sort by last update time
+              query.order('updated_at', {
+                ascending: isAscending,
+                nullsFirst: false
+              });
+              break;
+          }
+        }
+
+        // Always include ID as final sort for stability
+        query.order('id', { ascending: false });
+
+        // Apply cursor-based pagination if cursor exists
         if (input.cursor) {
-          query.lt('id', input.cursor);
+          const [timestamp, id] = input.cursor.split('_');
+          const lastCriteria = input.sort_criteria[input.sort_criteria.length - 1];
+          const isAscending = lastCriteria.order === 'asc';
+          
+          if (lastCriteria.field === 'updated_at') {
+            query.or(`or(updated_at.${isAscending ? 'gt' : 'lt'}.${timestamp},and(updated_at.eq.${timestamp},id.${isAscending ? 'gt' : 'lt'}.${id}))`);
+          }
         }
 
         // Get one more than limit for cursor
         query.limit(input.limit + 1);
-
-        // Apply sorting
-        if (input.sort_by === 'created_at') {
-          query.order('created_at', { ascending: input.sort_order === 'asc' });
-        } else if (input.sort_by === 'updated_at') {
-          query.order('updated_at', { ascending: input.sort_order === 'asc' });
-        }
 
         const { data: tickets, error } = await query;
 
@@ -177,6 +212,11 @@ export const ticketRouter = router({
             message: 'Failed to fetch tickets',
             cause: error,
           });
+        }
+
+        // Log the first ticket to see its structure
+        if (tickets && tickets.length > 0) {
+          console.log('First ticket structure:', JSON.stringify(tickets[0], null, 2));
         }
 
         // Use admin client only for additional metadata that doesn't need RLS
@@ -208,13 +248,17 @@ export const ticketRouter = router({
         const hasNextPage = tickets.length > input.limit;
         const items = hasNextPage ? tickets.slice(0, -1) : tickets;
 
+        // Create the next cursor using the last item's updated_at and id
+        const nextCursor = hasNextPage 
+          ? `${items[items.length - 1].updated_at || 'null'}_${items[items.length - 1].id}`
+          : undefined;
+
         return {
           tickets: items.map((ticket) => ({
             ...ticket,
             message_count: Array.isArray(ticket.messages) ? ticket.messages.length : 0,
-            last_updated_by: lastUpdaterMap.get(ticket.id) || { name: null, email: null }
           })),
-          nextCursor: hasNextPage ? items[items.length - 1].id : undefined
+          nextCursor
         };
 
       } catch (error) {
@@ -250,7 +294,10 @@ export const ticketRouter = router({
 
         const { data: ticket, error } = await adminClient
           .from('tickets')
-          .update(updateData)
+          .update({
+            ...updateData,
+            last_updated_by_id: ctx.user.id,
+          })
           .eq('id', id)
           .select()
           .single();
