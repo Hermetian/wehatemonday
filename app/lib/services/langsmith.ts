@@ -1,9 +1,8 @@
-import { createAdminClient } from '@/app/lib/auth/supabase';
 import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { JsonOutputParser } from '@langchain/core/output_parsers';
-import { Client, Run } from 'langsmith';
+import { Client, RunTree, type RunTreeConfig } from 'langsmith';
 
 interface ProcessedTicketData {
   title: string;
@@ -24,6 +23,14 @@ interface SimilarTicket {
   tags: string[];
   status: string;
   priority: string;
+}
+
+interface SuggestionFeedback {
+  runId: string;
+  originalSuggestion: string;
+  finalMessage: string;
+  feedbackScore: number;
+  feedbackText?: string;
 }
 
 const SYSTEM_TEMPLATE = `You are a helpful assistant that processes marketplace conversations. Given a conversation, you will:
@@ -82,7 +89,6 @@ tags: The full name with _ between words because this should always appear, and 
 Conversation to process: {conversation}`;
 
 export class LangSmithService {
-  private adminClient = createAdminClient(true);
   private model = new ChatOpenAI({
     modelName: 'gpt-4-turbo-preview',
     temperature: 0.2,
@@ -90,16 +96,26 @@ export class LangSmithService {
   private langsmith: Client;
 
   constructor() {
-    // Initialize LangSmith client
     this.langsmith = new Client({
       apiUrl: process.env.LANGSMITH_API_URL,
       apiKey: process.env.LANGSMITH_API_KEY,
     });
   }
 
+  private getApiUrl(): string {
+    // In production, we want to use the absolute URL
+    if (typeof window !== 'undefined') {
+      // We're in the browser
+      return window.location.origin;
+    }
+    // We're on the server
+    return process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+  }
+
   async processConversation(id: string): Promise<ProcessedTicketData> {
     const runId = crypto.randomUUID();
     const projectName = process.env.LANGSMITH_PROJECT || 'default';
+    const baseUrl = this.getApiUrl();
     
     try {
       // Start a new run
@@ -111,39 +127,30 @@ export class LangSmithService {
         project_name: projectName,
       });
 
-      // Get the conversation content
-      const { data: conversation, error } = await this.adminClient
-        .from('marketplace_conversations')
-        .select('raw_content')
-        .eq('id', id)
-        .single();
-
-      if (error) {
-        await this.langsmith.updateRun(runId, {
-          error: error.message,
-          end_time: Date.now(),
-        });
-        throw error;
+      // Get the conversation content from the API
+      const response = await fetch(`${baseUrl}/api/langsmith?action=getConversation&id=${id}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch conversation');
       }
+      const conversation = await response.json();
 
       // Process the conversation
       const result = await this.processContent(conversation.raw_content, runId);
 
-      // Update the conversation with the processed content
-      const { error: updateError } = await this.adminClient
-        .from('marketplace_conversations')
-        .update({
+      // Update the conversation through the API
+      const updateResponse = await fetch(`${baseUrl}/api/langsmith?action=updateConversation&id=${id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           processed_content: result,
           status: 'completed'
-        })
-        .eq('id', id);
+        }),
+      });
 
-      if (updateError) {
-        await this.langsmith.updateRun(runId, {
-          error: updateError.message,
-          end_time: Date.now(),
-        });
-        throw updateError;
+      if (!updateResponse.ok) {
+        throw new Error('Failed to update conversation');
       }
 
       // Update run with success
@@ -154,14 +161,17 @@ export class LangSmithService {
 
       return result;
     } catch (error) {
-      // Update the conversation with the error
-      await this.adminClient
-        .from('marketplace_conversations')
-        .update({
+      // Update the conversation with error through the API
+      await fetch(`${baseUrl}/api/langsmith?action=updateConversation&id=${id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           status: 'error',
           error_message: error instanceof Error ? error.message : 'Unknown error'
-        })
-        .eq('id', id);
+        }),
+      });
 
       // Update run with error
       if (error instanceof Error) {
@@ -268,85 +278,56 @@ export class LangSmithService {
     runId?: string;
     parentRunId?: string;
   }): Promise<{ runId: string }> {
-    const { data, error } = await this.adminClient
-      .from('langsmith_runs')
-      .insert({
-        run_id: params.runId || crypto.randomUUID(),
-        name: params.name,
-        inputs: params.inputs,
-        parent_run_id: params.parentRunId,
-      })
-      .select('run_id')
-      .single();
+    const runId = params.runId || crypto.randomUUID();
+    const projectName = process.env.LANGSMITH_PROJECT || 'default';
 
-    if (error) {
-      throw error;
-    }
+    await this.langsmith.createRun({
+      id: runId,
+      name: params.name,
+      run_type: 'chain',
+      inputs: params.inputs,
+      parent_run_id: params.parentRunId,
+      start_time: Date.now(),
+      project_name: projectName,
+    });
 
-    return { runId: data.run_id };
+    return { runId };
   }
 
   private async findSimilarTickets(ticket: any, limit: number = 3): Promise<SimilarTicket[]> {
-    const { data: tickets, error } = await this.adminClient
-      .from('tickets')
-      .select('title, description, tags, status, priority')
-      .neq('id', ticket.id)
-      .overlaps('tags', ticket.tags || [])
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (error) {
+    try {
+      const baseUrl = this.getApiUrl();
+      const response = await fetch(`${baseUrl}/api/langsmith?action=similarTickets&ticketId=${ticket.id}&tags=${ticket.tags?.join(',')}`);
+      const data = await response.json();
+      return data.tickets || [];
+    } catch (error) {
       console.error('Error finding similar tickets:', error);
       return [];
     }
-
-    return tickets;
   }
 
   private async findSimilarMessages(ticket: any, limit: number = 5): Promise<SimilarMessage[]> {
-    // First get similar ticket IDs
-    const { data: similarTickets } = await this.adminClient
-      .from('tickets')
-      .select('id')
-      .overlaps('tags', ticket.tags || [])
-      .neq('id', ticket.id)
-      .limit(10);
-
-    if (!similarTickets?.length) {
-      return [];
-    }
-
-    // Then get messages from those tickets
-    const { data: messages, error } = await this.adminClient
-      .from('messages')
-      .select('content, is_internal, ticket_id')
-      .in('ticket_id', similarTickets.map(t => t.id))
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (error) {
+    try {
+      const baseUrl = this.getApiUrl();
+      const response = await fetch(`${baseUrl}/api/langsmith?action=similarMessages&ticketId=${ticket.id}&tags=${ticket.tags?.join(',')}`);
+      const data = await response.json();
+      return data.messages || [];
+    } catch (error) {
       console.error('Error finding similar messages:', error);
       return [];
     }
-
-    return messages;
   }
 
   private async findSellerMessages(limit: number = 10): Promise<SimilarMessage[]> {
-    // Get messages from the seller (non-internal messages only)
-    const { data: messages, error } = await this.adminClient
-      .from('messages')
-      .select('content, is_internal, ticket_id')
-      .eq('is_internal', false)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (error) {
+    try {
+      const baseUrl = this.getApiUrl();
+      const response = await fetch(`${baseUrl}/api/langsmith?action=sellerMessages&ticketId=any`);
+      const data = await response.json();
+      return data.messages || [];
+    } catch (error) {
       console.error('Error finding seller messages:', error);
       return [];
     }
-
-    return messages;
   }
 
   async generateMessageSuggestion({ ticket, messages, marketplaceConversation }: {
@@ -513,6 +494,166 @@ Response (as the seller to the buyer):`;
       }
 
       throw error;
+    }
+  }
+
+  async provideSuggestionFeedback({
+    runId,
+    originalSuggestion,
+    finalMessage,
+    feedbackText
+  }: Omit<SuggestionFeedback, 'feedbackScore'>) {
+    // Calculate similarity score between original and final
+    const similarity = this.calculateSimilarity(originalSuggestion, finalMessage);
+    
+    // Analyze what changes were made
+    const changes = this.analyzeChanges(originalSuggestion, finalMessage);
+
+    await this.langsmith.createFeedback(
+      runId,
+      "suggestion_quality",
+      {
+        score: 1, // Always consider user feedback as high quality
+        comment: feedbackText,
+        value: {  // Use value instead of metadata
+          similarity_score: similarity,
+          changes_summary: changes,
+          modification_type: changes.type
+        }
+      }
+    );
+
+    // Store as example since we consider all user feedback valuable
+    await this.storeAsExample({
+      original: originalSuggestion,
+      improved: finalMessage,
+      changes,
+      feedback: feedbackText
+    });
+  }
+
+  private calculateSimilarity(text1: string, text2: string): number {
+    // Implement text similarity calculation
+    // Could use cosine similarity of embeddings
+    return 0.5; // Placeholder
+  }
+
+  private analyzeChanges(original: string, final: string): any {
+    // Implement diff analysis to understand what kinds of changes were made
+    // Could use diff-match-patch or similar
+    return {
+      type: 'style_improvement',
+      changes: ['tone adjusted', 'clarity improved']
+    };
+  }
+
+  private getRunUrl(runId: string, projectName?: string): string {
+    const baseUrl = process.env.LANGSMITH_ENDPOINT || 'https://api.smith.langchain.com';
+    const project = projectName || process.env.LANGSMITH_PROJECT || 'default';
+    return `${baseUrl}/projects/${project}/runs/${runId}`;
+  }
+
+  private async storeAsExample(example: any) {
+    try {
+      // Create a top-level run for the feedback
+      const pipeline = new RunTree({
+        name: "Suggestion Feedback",
+        run_type: "chain",
+        inputs: {
+          original_suggestion: example.original
+        }
+      });
+      await pipeline.postRun();
+
+      // Store the run ID for URL retrieval
+      const pipelineRunId = pipeline.id;
+
+      // Create a child run for the user modification
+      const modificationRun = await pipeline.createChild({
+        name: "User Modification",
+        run_type: "tool",
+        inputs: {
+          original: example.original,
+          feedback: example.feedback
+        }
+      });
+      await modificationRun.postRun();
+
+      // End the modification run with the changes
+      await modificationRun.end({
+        outputs: {
+          modified: example.improved,
+          changes: example.changes
+        }
+      });
+      await modificationRun.patchRun();
+
+      // End the pipeline with the final results
+      await pipeline.end({
+        outputs: {
+          final_message: example.improved,
+          feedback_provided: example.feedback,
+          changes_summary: example.changes
+        }
+      });
+      await pipeline.patchRun();
+
+      // Get or create the dataset for future training
+      let dataset;
+      const datasetName = "suggestion_examples";
+      const datasets = await this.langsmith.listDatasets();
+      
+      for await (const d of datasets) {
+        if (d.name === datasetName) {
+          dataset = d;
+          break;
+        }
+      }
+
+      if (!dataset) {
+        dataset = await this.langsmith.createDataset(datasetName, {
+          description: "High quality suggestion examples with feedback"
+        });
+      }
+
+      // Store the example in the dataset
+      await this.langsmith.createExample(
+        { original: example.original },
+        { improved: example.improved },
+        {
+          datasetId: dataset.id,
+          metadata: {
+            feedback: example.feedback,
+            changes: example.changes
+          }
+        }
+      );
+
+      // Get the trace URL
+      const traceUrl = this.getRunUrl(pipelineRunId);
+      console.log('Trace URL:', traceUrl);
+      
+      return {
+        success: true,
+        traceUrl
+      };
+    } catch (error) {
+      console.error('Failed to store example:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Add a new method to get trace URL
+  async getTraceUrl(runId: string): Promise<string | null> {
+    try {
+      const run = await this.langsmith.readRun(runId);
+      return this.getRunUrl(runId);
+    } catch (error) {
+      console.error('Failed to get trace URL:', error);
+      return null;
     }
   }
 }

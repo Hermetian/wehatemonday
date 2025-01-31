@@ -15,6 +15,9 @@ import { Label } from '@/app/components/ui/label';
 import { cn } from '@/app/lib/utils/common';
 import { inferRouterInputs } from '@trpc/server';
 import type { AppRouter } from '@/app/lib/trpc/routers/_app';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/app/components/ui/dialog';
+import { Textarea } from '@/app/components/ui/textarea';
+import { langSmithService } from '@/app/lib/services/langsmith';
 
 type MessageInput = inferRouterInputs<AppRouter>['message']['create'];
 //type Message = NonNullable<inferRouterOutputs<AppRouter>['message']['list']>[number];
@@ -32,6 +35,10 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id, tags 
   const [isLoadingSuggestion, setIsLoadingSuggestion] = React.useState(false);
   const utils = trpc.useContext();
   const dialogRef = React.useRef<HTMLDivElement | null>(null);
+  const [lastSuggestionRunId, setLastSuggestionRunId] = React.useState<string | null>(null);
+  const [lastSuggestion, setLastSuggestion] = React.useState<string | null>(null);
+  const [showFeedbackDialog, setShowFeedbackDialog] = React.useState(false);
+  const [feedbackText, setFeedbackText] = React.useState('');
 
   const { data: messages, isLoading } = trpc.message.list.useQuery({ ticket_id });
 
@@ -52,22 +59,24 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id, tags 
       // Format the suggestion for HTML display
       const suggestionHtml = suggestion
         .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .map(line => `<p>${line}</p>`)
+        .map((line: string) => line.trim())
+        .filter((line: string) => line.length > 0)
+        .map((line: string) => `<p>${line}</p>`)
         .join('');
       
       if (isInDialog) {
-        // For RichTextEditor, we need to set the HTML content
         setContent(suggestionHtml);
         setContentHtml(suggestionHtml);
+        setIsInternal(true);
+        // Store suggestion info for feedback
+        setLastSuggestionRunId(crypto.randomUUID()); // Generate a new run ID
+        setLastSuggestion(suggestion);
       } else {
-        // Create a new message and clear the input
         createMessage.mutate({
           content: suggestion,
           content_html: suggestionHtml,
           ticket_id,
-          is_internal: false
+          is_internal: true
         });
       }
       utils.message.list.invalidate();
@@ -90,6 +99,18 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id, tags 
     e.preventDefault();
     if (!content.trim()) return;
 
+    // If this was a modified suggestion, show feedback dialog
+    if (lastSuggestionRunId && lastSuggestion && content !== lastSuggestion) {
+      setShowFeedbackDialog(true);
+      return;
+    }
+
+    await submitMessage();
+  };
+
+  const submitMessage = async (skipFeedback: boolean = false) => {
+    if (!content.trim()) return;
+
     const messageInput: MessageInput = {
       content: content.trim(),
       content_html,
@@ -97,7 +118,21 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id, tags 
       is_internal,
     };
 
+    // If this was a modified suggestion and we're not skipping feedback
+    if (!skipFeedback && lastSuggestionRunId && lastSuggestion && content !== lastSuggestion) {
+      await langSmithService.provideSuggestionFeedback({
+        runId: lastSuggestionRunId,
+        originalSuggestion: lastSuggestion,
+        finalMessage: content,
+        feedbackText
+      });
+    }
+
     await createMessage.mutateAsync(messageInput);
+    setLastSuggestionRunId(null);
+    setLastSuggestion(null);
+    setFeedbackText('');
+    setShowFeedbackDialog(false);
   };
 
   const isStaff = role === 'ADMIN' || role === 'MANAGER' || role === 'AGENT';
@@ -223,6 +258,48 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id, tags 
           </Button>
         </div>
       </form>
+
+      {/* Feedback Dialog */}
+      <Dialog open={showFeedbackDialog} onOpenChange={setShowFeedbackDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Provide Feedback</DialogTitle>
+            <DialogDescription>
+              Your changes to the suggested message will help improve future suggestions.
+              Please explain what you changed and why.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <Textarea
+              value={feedbackText}
+              onChange={(e) => setFeedbackText(e.target.value)}
+              placeholder="What did you change in the suggestion and why? (optional)"
+              className="min-h-[100px]"
+            />
+          </div>
+          
+          <DialogFooter className="sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setShowFeedbackDialog(false);
+                submitMessage(true);
+              }}
+            >
+              Skip Feedback
+            </Button>
+            <Button
+              type="button"
+              onClick={() => submitMessage(false)}
+              disabled={createMessage.isLoading}
+            >
+              Submit with Feedback
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }; 
