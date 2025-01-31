@@ -15,7 +15,7 @@ export function Navigation() {
   const [marketplaceDialogOpen, setMarketplaceDialogOpen] = useState(false);
 
   const isManager = (user?.role as Role) === 'MANAGER' || (user?.role as Role) === 'ADMIN';
-  const isStaff = (user?.role as Role) === 'STAFF' || isManager;
+  const isStaff = (user?.role as Role) === 'AGENT' || isManager;
 
   return (
     <>
