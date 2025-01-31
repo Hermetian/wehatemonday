@@ -268,7 +268,10 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
                   </SelectTrigger>
                   <SelectContent className="bg-white border-gray-200">
                     <SelectItem value="unassigned" className="text-gray-900 hover:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900">
-                      Unassigned
+                      {assignableUsers.find(user => user.is_customer && STAFF_ROLES.includes(user.role as typeof STAFF_ROLES[number])) 
+                        ? 'Self-assigned'
+                        : 'Unassigned'
+                      }
                     </SelectItem>
                     {assignableUsers.map((user) => (
                       <SelectItem key={user.id} value={user.id} className="text-gray-900 hover:text-gray-900 data-[highlighted]:bg-gray-100 data-[highlighted]:text-gray-900">

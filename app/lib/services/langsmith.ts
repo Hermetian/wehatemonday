@@ -23,8 +23,48 @@ Format your response as JSON with these fields:
 - title: Customer's name + short product description
 - description: The formatted conversation
 - priority: Customer interest level (LOW/MEDIUM/HIGH/URGENT)
-- tags: Product details (up to 5)
+- tags: Product details (up to 3). Also include as a tag the full product name.
 
+Example: Earl Joseph
+Earl · 6 Beds 2 Baths House
+Add
+Name
+Earl started this chat. View buyer profile
+Earl
+Earl Joseph
+Is this listing still available?
+Jan 23, 2025, 11:19 AM
+You sent
+It is
+You sent
+Would you like to see it
+Sat 6:40 AM
+Earl
+Earl Joseph
+Where is it located again
+Sat 9:25 AM
+You sent
+524 Hamilton Ave, Menlo Park 94025
+Sat 8:48 PM
+Earl
+Earl Joseph
+Can you send me your number so we can talk and set up a time I can come see the property my name is Earl number 628 303-8938
+
+title: Earl Joseph 6Br2Ba
+description: Customer: Is this listing still available?
+Seller: It is
+Seller: Would you like to see it
+Earl: Where is it located again
+Seller: 524 Hamilton Ave, Menlo Park 94025
+Earl: Can you send me your number so we can talk and set up a time I can come see the property my name is Earl number 628 303-8938
+priority: HIGH
+tags: 6_Beds_2_Baths_House, 524_Hamilton, phone_number
+
+Reasoning: 
+title: The customer's name is Earl Joseph. The product is a 6 Beds 2 Baths House, which we shorten to 6Br2Ba
+description: The chat, with "You" replaced by "Seller" and "Earl or Earl Joseph" replace by "Earl"
+priority: The customer actively wants to see the property. URGENT would mean they want to move quickly OR want to sign on the property. LOW would be if they're not responding much. 
+tags: The full name with _ between words because this should always appear, and the fact that the customer wants to commuinicate via phone. We could add a second and third discretionary tag but there's no need.
 Conversation to process: {conversation}`;
 
 export class LangSmithService {

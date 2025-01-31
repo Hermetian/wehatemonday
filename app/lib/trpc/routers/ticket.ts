@@ -136,7 +136,7 @@ export const ticketRouter = router({
           .from('tickets')
           .select(`
             *,
-            created_by:created_by_id(id, name, email),
+            created_by:created_by_id(id, name, email, role),
             assigned_to:assigned_to_id(id, name, email),
             last_updated_by:last_updated_by_id(id, name, email),
             messages(id)
@@ -370,6 +370,7 @@ export const ticketRouter = router({
             .from('users')
             .select('id, name, email, role')
             .in('role', ASSIGNABLE_ROLES)
+            .neq('id', ticket.customer_id)
             .order('role', { ascending: true })
             .order('name', { ascending: true }),
           adminClient

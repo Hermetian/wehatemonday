@@ -33,6 +33,8 @@ import { SortableItem } from '@/app/components/common/SortableItem';
 import { RichTextContent } from '@/app/components/ui/rich-text-editor';
 import { MarketplaceDialog } from '../marketplace/MarketplaceDialog';
 
+const STAFF_ROLES = ['ADMIN', 'MANAGER', 'AGENT'] as const;
+
 // Define the raw ticket type as it comes from the server
 interface RawTicket {
   id: string;
@@ -49,6 +51,7 @@ interface RawTicket {
   created_by: {
     name: string | null;
     email: string | null;
+    role: string;
   };
   assigned_to: {
     name: string | null;
@@ -563,7 +566,9 @@ export const TicketList: React.FC<TicketListProps> = ({ filterByUser }) => {
                       <span className="font-medium">Assigned to:</span>{' '}
                       {ticket.assigned_to
                         ? ticket.assigned_to.name || ticket.assigned_to.email
-                        : 'Unassigned'}
+                        : ticket.created_by.role && STAFF_ROLES.includes(ticket.created_by.role as typeof STAFF_ROLES[number])
+                          ? 'Self-assigned'
+                          : 'Unassigned'}
                     </p>
                   </div>
                 )}
