@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { publicProcedure, router } from '../trpc';
+import { publicProcedure, router, protectedProcedure } from '../trpc';
 import { langSmithService } from '@/app/lib/services/langsmith';
 import { TRPCError } from '@trpc/server';
 
@@ -27,6 +27,28 @@ export const marketplaceRouter = router({
 
       if (error) {
         throw error;
+      }
+
+      return conversation;
+    }),
+
+  getById: protectedProcedure
+    .input(z.object({
+      id: z.string(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { data: conversation, error } = await ctx.supabase
+        .from('marketplace_conversations')
+        .select('*')
+        .eq('id', input.id)
+        .single();
+
+      if (error) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Conversation not found',
+          cause: error,
+        });
       }
 
       return conversation;

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { router, protectedProcedure } from '@/app/lib/trpc/trpc';
 import { TRPCError } from '@trpc/server';
 import { createAuditLog } from '@/app/lib/utils/audit-logger';
+import { langSmithService } from '@/app/lib/services/langsmith';
 
 export const messageRouter = router({
   create: protectedProcedure
@@ -162,6 +163,57 @@ export const messageRouter = router({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Failed to fetch messages',
+          cause: error,
+        });
+      }
+    }),
+
+  getSuggestion: protectedProcedure
+    .input(z.object({
+      ticket_id: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Get ticket and messages
+        const [ticketResult, messagesResult] = await Promise.all([
+          ctx.supabase
+            .from('tickets')
+            .select('*')
+            .eq('id', input.ticket_id)
+            .single(),
+          ctx.supabase
+            .from('messages')
+            .select('*')
+            .eq('ticket_id', input.ticket_id)
+            .order('created_at', { ascending: true })
+        ]);
+
+        if (ticketResult.error) throw ticketResult.error;
+        if (messagesResult.error) throw messagesResult.error;
+
+        const ticket = ticketResult.data;
+        const messages = messagesResult.data;
+
+        // Get marketplace conversation if it exists
+        const { data: marketplaceConversation } = await ctx.supabase
+          .from('marketplace_conversations')
+          .select('raw_content, processed_content')
+          .eq('ticket_id', input.ticket_id)
+          .single();
+
+        // Generate suggestion using LangSmith
+        const suggestion = await langSmithService.generateMessageSuggestion({
+          ticket,
+          messages,
+          marketplaceConversation
+        });
+
+        return suggestion;
+      } catch (error) {
+        console.error('Error getting message suggestion:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to get message suggestion',
           cause: error,
         });
       }

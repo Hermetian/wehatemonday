@@ -231,6 +231,109 @@ export class LangSmithService {
 
     return { runId: data.run_id };
   }
+
+  async generateMessageSuggestion({ ticket, messages, marketplaceConversation }: {
+    ticket: any;
+    messages: any[];
+    marketplaceConversation: { raw_content: string; processed_content: any; } | null;
+  }): Promise<string> {
+    const runId = crypto.randomUUID();
+    const projectName = process.env.LANGSMITH_PROJECT || 'default';
+
+    try {
+      // Start a new run
+      await this.langsmith.createRun({
+        name: 'generate_message_suggestion',
+        run_type: 'chain',
+        inputs: { ticket_id: ticket.id },
+        start_time: Date.now(),
+        project_name: projectName,
+      });
+
+      // Create the prompt template
+      const template = `You are a helpful customer service agent. Based on the following context, suggest a response to the customer.
+
+Ticket Information:
+Title: {title}
+Description: {description}
+Status: {status}
+Priority: {priority}
+Tags: {tags}
+
+Previous Messages:
+{messages}
+
+Original Marketplace Conversation:
+{marketplace_conversation}
+
+Generate a professional, helpful response that:
+1. Addresses any questions or concerns
+2. Provides relevant information
+3. Maintains a friendly and professional tone
+4. Is concise but comprehensive
+5. Includes any necessary follow-up questions
+
+Response:`;
+
+      const prompt = new PromptTemplate({
+        template,
+        inputVariables: ['title', 'description', 'status', 'priority', 'tags', 'messages', 'marketplace_conversation'],
+      });
+
+      // Format messages for the prompt
+      const formattedMessages = messages
+        .map(m => `${m.is_internal ? '[INTERNAL] ' : ''}${m.content}`)
+        .join('\n\n');
+
+      // Create the chain
+      const chain = RunnableSequence.from([
+        prompt,
+        this.model,
+      ]);
+
+      // Run the chain
+      const result = await chain.invoke({
+        title: ticket.title,
+        description: ticket.description,
+        status: ticket.status,
+        priority: ticket.priority,
+        tags: ticket.tags?.join(', ') || '',
+        messages: formattedMessages,
+        marketplace_conversation: marketplaceConversation?.raw_content || 'No marketplace conversation available',
+      });
+
+      // Update run with success
+      await this.langsmith.updateRun(runId, {
+        outputs: { result },
+        end_time: Date.now(),
+      });
+
+      // Convert the AI message to string
+      const messageContent = typeof result === 'string' 
+        ? result 
+        : 'content' in result 
+          ? typeof result.content === 'string' 
+            ? result.content 
+            : Array.isArray(result.content) 
+              ? result.content.map(part => 
+                  typeof part === 'string' ? part : 'text' in part ? part.text : ''
+                ).join('')
+              : String(result.content)
+          : String(result);
+
+      return messageContent;
+    } catch (error) {
+      // Update run with error
+      if (error instanceof Error) {
+        await this.langsmith.updateRun(runId, {
+          error: error.message,
+          end_time: Date.now(),
+        });
+      }
+
+      throw error;
+    }
+  }
 }
 
 export const langSmithService = new LangSmithService();

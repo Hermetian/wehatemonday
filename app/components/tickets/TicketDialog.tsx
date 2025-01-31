@@ -52,8 +52,8 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
   const [title, setTitle] = React.useState(ticket.title);
   const [description, setDescription] = React.useState(ticket.description);
   const [description_html, setDescriptionHtml] = React.useState(ticket.description_html);
-  const [status, setStatus] = React.useState<TicketStatus>(ticket.status);
-  const [priority, setPriority] = React.useState<TicketPriority>(ticket.priority);
+  const [status, setStatus] = React.useState<TicketStatus>(ticket.status as TicketStatus);
+  const [priority, setPriority] = React.useState<TicketPriority>(ticket.priority as TicketPriority);
   const [assigned_to_id, setAssignedToId] = React.useState<string | null>(ticket.assigned_to_id);
   const [tags, setTags] = React.useState(ticket.tags);
   const [newTag, setNewTag] = React.useState('');
@@ -311,7 +311,7 @@ export const TicketDialog: React.FC<TicketDialogProps> = ({
           <div className="border-t border-gray-200 pt-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Messages</h3>
             <div className="text-gray-900 [&_.bg-yellow-50]:!bg-yellow-50 [&_.border-yellow-200]:!border-yellow-200 [&_.text-yellow-600]:!text-yellow-600">
-              <TicketMessages ticket_id={ticket.id} />
+              <TicketMessages ticket_id={ticket.id} tags={tags} />
             </div>
           </div>
         </div>

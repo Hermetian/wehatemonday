@@ -22,6 +22,7 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
 }) => {
   const router = useRouter();
   const { user } = useAuth();
+  const utils = trpc.useContext();
   const [content, setContent] = React.useState('');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [alert, setAlert] = React.useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -119,15 +120,25 @@ export const MarketplaceDialog: React.FC<MarketplaceDialogProps> = ({
       // Convert description to HTML using marked
       const descriptionHtml = await marked(processedTicket.description);
 
+      // Add Marketplace tag to existing tags
+      const tags = ['Marketplace', ...(processedTicket.tags || [])];
+
+      // Get the marketplace conversation to find the creator
+      const conversation = await utils.marketplace.getById.fetch({ id: conversationId });
+
+      if (!conversation) {
+        throw new Error('Failed to get conversation details');
+      }
+
       const ticket = await createTicket.mutateAsync({
         title: processedTicket.title,
         description: processedTicket.description,
         description_html: descriptionHtml,
         priority: processedTicket.priority as any,
-        customer_id: user.id,
-        created_by_id: user.id,
-        tags: processedTicket.tags,
-        assigned_to_id: user.id, // Assign to the creator
+        customer_id: conversation.created_by_id, // Use the conversation creator as the customer
+        created_by_id: user.id, // Current user (staff) is creating the ticket
+        tags,
+        assigned_to_id: undefined, // Let the server handle the default value
       });
 
       // Update the marketplace conversation with the ticket ID

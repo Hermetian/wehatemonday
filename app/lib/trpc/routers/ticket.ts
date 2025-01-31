@@ -59,16 +59,16 @@ export const ticketRouter = router({
         customer_id: z.string(),
         created_by_id: z.string(),
         tags: z.array(z.string()).optional(),
-        assigned_to_id: z.string().optional(),
+        assigned_to_id: z.string().nullable().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        // Verify the user is creating a ticket for themselves
-        if (input.customer_id !== ctx.user.id) {
+        // Only customers are restricted to creating tickets for themselves
+        if (ctx.user.role === 'CUSTOMER' && input.customer_id !== ctx.user.id) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'You can only create tickets for yourself',
+            message: 'As a customer, you can only create tickets for yourself',
           });
         }
 

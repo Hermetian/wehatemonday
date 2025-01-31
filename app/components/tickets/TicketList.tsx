@@ -64,7 +64,7 @@ interface RawTicket {
 }
 
 // Define the processed ticket type with proper enum types
-interface ProcessedTicket extends RawTicket {
+export interface ProcessedTicket extends RawTicket {
   statusDisplay: string;
   priorityDisplay: string;
   priorityColor: string;

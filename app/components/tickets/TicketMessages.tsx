@@ -21,13 +21,15 @@ type MessageInput = inferRouterInputs<AppRouter>['message']['create'];
 
 interface TicketMessagesProps {
   ticket_id: string;
+  tags?: string[];
 }
 
-export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id }) => {
+export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id, tags = [] }) => {
   const { role } = useAuth();
   const [content, setContent] = React.useState('');
   const [content_html, setContentHtml] = React.useState('');
   const [is_internal, setIsInternal] = React.useState(false);
+  const [isLoadingSuggestion, setIsLoadingSuggestion] = React.useState(false);
   const utils = trpc.useContext();
 
   const { data: messages, isLoading } = trpc.message.list.useQuery({ ticket_id });
@@ -40,6 +42,21 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id }) => 
       utils.message.list.invalidate();
     },
   });
+
+  const getSuggestion = trpc.message.getSuggestion.useMutation({
+    onSuccess: (suggestion) => {
+      setContent(suggestion);
+      setContentHtml(suggestion);
+    },
+    onSettled: () => {
+      setIsLoadingSuggestion(false);
+    }
+  });
+
+  const handleGetSuggestion = async () => {
+    setIsLoadingSuggestion(true);
+    await getSuggestion.mutateAsync({ ticket_id });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +73,7 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id }) => 
   };
 
   const isStaff = role === 'ADMIN' || role === 'MANAGER' || role === 'AGENT';
+  const isMarketplace = tags.includes('Marketplace');
 
   return (
     <div className="space-y-6">
@@ -105,9 +123,27 @@ export const TicketMessages: React.FC<TicketMessagesProps> = ({ ticket_id }) => 
       {/* Message Form */}
       <form onSubmit={handleSubmit} className="space-y-4 bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
         <div className="space-y-2">
-          <Label htmlFor="message" className="text-sm font-medium text-gray-700">
-            Add a message
-          </Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="message" className="text-sm font-medium text-gray-700">
+              Add a message
+            </Label>
+            {isStaff && isMarketplace && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleGetSuggestion}
+                disabled={isLoadingSuggestion}
+                className="text-blue-600 hover:text-blue-700 border-blue-200 hover:bg-blue-50"
+              >
+                {isLoadingSuggestion ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  'Get Suggestion'
+                )}
+              </Button>
+            )}
+          </div>
           <RichTextEditor
             content={content}
             onChange={(html) => {
